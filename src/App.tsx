@@ -17,22 +17,19 @@ import {
   Vote
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { fallbackMatches, initialPicks, initialVotes, users } from "./data";
+import { fallbackMatches, users } from "./data";
 import {
-  buildMatchSlate,
   calculateBankroll,
   calculateProfit,
-  filterMatchesForDay,
   scorePick,
   selectSlipPicks
 } from "./domain";
 import { fetchTodayMatches } from "./sportsApi";
-import type { DailySlip, MarketType, Match, Pick, PickStatus, User, VoteType } from "./types";
+import type { DailySlip, MarketType, Match, Pick, PickStatus, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date("2026-05-05T12:00:00+01:00");
 const tipDay = "2026-05-05";
 const communityInitialBankroll = 100;
-const targetMatchCount = 18;
 
 const marketOptions: MarketType[] = [
   "1X2",
@@ -105,13 +102,13 @@ function Avatar({ user }: { user: User }) {
 export function App() {
   const [activeUserId, setActiveUserId] = useState("u-xico");
   const [matches, setMatches] = useState<Match[]>(fallbackMatches);
-  const [selectedMatchId, setSelectedMatchId] = useState(fallbackMatches[0].id);
-  const [matchSync, setMatchSync] = useState<"loading" | "live" | "mixed" | "fallback">("loading");
-  const [picks, setPicks] = useState<Pick[]>(initialPicks);
-  const [votes, setVotes] = useState(initialVotes);
+  const [selectedMatchId, setSelectedMatchId] = useState("");
+  const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty" | "fallback">("loading");
+  const [picks, setPicks] = useState<Pick[]>([]);
+  const [votes, setVotes] = useState<VoteRecord[]>([]);
   const [dailySlip, setDailySlip] = useState<DailySlip>({
     status: "draft",
-    pickIds: ["p-1", "p-2"],
+    pickIds: [],
     generatedAt: currentDate.toISOString()
   });
   const [formState, setFormState] = useState({
@@ -131,12 +128,10 @@ export function App() {
     setMatchSync("loading");
     try {
       const todayMatches = await fetchTodayMatches(currentDate);
-      if (todayMatches.length === 0) throw new Error("Sem jogos devolvidos pela API");
-      const matchSlate = filterMatchesForDay(buildMatchSlate(todayMatches, fallbackMatches, targetMatchCount), tipDay);
-      setMatches(matchSlate);
-      setSelectedMatchId(matchSlate[0].id);
-      setMatchSync(matchSlate.length > todayMatches.length ? "mixed" : "live");
-      setPicks(createStarterPicks(matchSlate));
+      setMatches(todayMatches);
+      setSelectedMatchId(todayMatches[0]?.id ?? "");
+      setMatchSync(todayMatches.length > 0 ? "live" : "empty");
+      setPicks(createStarterPicks(todayMatches));
       setVotes([]);
       setDailySlip({
         status: "draft",
@@ -145,15 +140,22 @@ export function App() {
       });
     } catch {
       setMatches(fallbackMatches);
-      setSelectedMatchId(fallbackMatches[0].id);
+      setSelectedMatchId(fallbackMatches[0]?.id ?? "");
       setMatchSync("fallback");
+      setPicks([]);
+      setVotes([]);
+      setDailySlip({
+        status: "draft",
+        pickIds: [],
+        generatedAt: new Date().toISOString()
+      });
     }
   }
 
   const activeUser = userById(activeUserId);
   const selectedMatch = matches.find((match) => match.id === selectedMatchId) ?? matches[0];
   const pendingPicks = picks.filter((pick) => pick.status === "pending");
-  const selectedMatchPicks = picks.filter((pick) => pick.matchId === selectedMatch.id);
+  const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
 
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
@@ -184,7 +186,7 @@ export function App() {
     event.preventDefault();
     const odds = Number(formState.odds);
     const stake = Number(formState.stake);
-    if (!formState.selection.trim() || !formState.reason.trim() || odds <= 1 || stake <= 0) return;
+    if (!selectedMatch || !formState.selection.trim() || !formState.reason.trim() || odds <= 1 || stake <= 0) return;
 
     const nextPick: Pick = {
       id: `p-${Date.now()}`,
@@ -282,9 +284,9 @@ export function App() {
           <div className={`sync-chip ${matchSync}`}>
             <RefreshCw size={15} />
             {matchSync === "loading" ? "A sincronizar jogos de hoje" : null}
-            {matchSync === "live" ? "Jogos de hoje via TheSportsDB" : null}
-            {matchSync === "mixed" ? "Tips de hoje: reais + demo filtrados" : null}
-            {matchSync === "fallback" ? "API indisponivel, dados demo ativos" : null}
+            {matchSync === "live" ? "Tips de hoje via ESPN + TheSportsDB" : null}
+            {matchSync === "empty" ? "Sem jogos reais encontrados para hoje" : null}
+            {matchSync === "fallback" ? "APIs indisponiveis" : null}
           </div>
           <h2>O boletim nasce da votacao da stream.</h2>
           <p>
@@ -352,7 +354,7 @@ export function App() {
               <CalendarDays size={18} />
               <h3>Jogos de hoje</h3>
             </div>
-            <span>{matchSync === "mixed" ? "API + Demo" : matchSync === "live" ? "API" : "Demo"}</span>
+            <span>{matchSync === "live" ? "API" : "Sem demo"}</span>
           </div>
           {matches.map((match) => (
             <button
@@ -370,13 +372,16 @@ export function App() {
               </small>
             </button>
           ))}
+          {matches.length === 0 ? (
+            <p className="empty-copy">Nao ha jogos reais carregados para este dia. Experimenta atualizar daqui a pouco.</p>
+          ) : null}
         </aside>
 
         <section className="panel picks-panel">
           <div className="section-title spread">
             <div>
               <Vote size={18} />
-              <h3>{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</h3>
+              <h3>{selectedMatch ? `${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}` : "Sem jogo selecionado"}</h3>
             </div>
             <span>{selectedMatchPicks.length} picks</span>
           </div>
@@ -443,7 +448,7 @@ export function App() {
                 onChange={(event) => setFormState((state) => ({ ...state, reason: event.target.value }))}
               />
             </label>
-            <button type="submit">Submeter pick</button>
+            <button type="submit" disabled={!selectedMatch}>Submeter pick</button>
           </form>
 
           <div className="pick-stack">

@@ -107,11 +107,25 @@ describe("PickRoom domain logic", () => {
       }
     ];
 
-    expect(buildMatchSlate([apiMatch], demoMatches, 3).map((match) => match.id)).toEqual([
-      "api-1",
-      "demo-1",
-      "demo-2"
-    ]);
+    expect(buildMatchSlate([apiMatch], demoMatches).map((match) => match.id)).toEqual(["api-1", "demo-1", "demo-2"]);
+  });
+
+  it("deduplicates matches from multiple real providers", () => {
+    const firstProvider: Match = {
+      id: "espn-1",
+      competition: "Liga",
+      homeTeam: "Casa",
+      awayTeam: "Fora",
+      startsAt: "2026-05-05T20:00:00Z",
+      status: "scheduled",
+      source: "api"
+    };
+    const secondProvider: Match = {
+      ...firstProvider,
+      id: "sportsdb-1"
+    };
+
+    expect(buildMatchSlate([firstProvider], [secondProvider]).map((match) => match.id)).toEqual(["espn-1"]);
   });
 
   it("filters the match slate to the selected tip day", () => {
