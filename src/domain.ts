@@ -69,3 +69,40 @@ export function buildMatchSlate(primaryMatches: Match[], secondaryMatches: Match
 export function filterMatchesForDay(matches: Match[], day: string) {
   return matches.filter((match) => match.startsAt.slice(0, 10) === day);
 }
+
+export function calculateDailyStats(picks: Pick[], slipPickIds: string[], day: string) {
+  const dayPicks = picks.filter((pick) => pick.createdAt.slice(0, 10) === day);
+  const selectedDayPicks = dayPicks.filter((pick) => slipPickIds.includes(pick.id));
+  const userIds = [...new Set(dayPicks.map((pick) => pick.userId))];
+
+  return {
+    total: summarizeDailyPicks(dayPicks, selectedDayPicks),
+    byViewer: userIds
+      .map((userId) => {
+        const submittedByUser = dayPicks.filter((pick) => pick.userId === userId);
+        const selectedByUser = selectedDayPicks.filter((pick) => pick.userId === userId);
+        return {
+          userId,
+          ...summarizeDailyPicks(submittedByUser, selectedByUser)
+        };
+      })
+      .sort((left, right) => right.profit - left.profit || right.selected - left.selected || right.submitted - left.submitted)
+  };
+}
+
+function summarizeDailyPicks(submittedPicks: Pick[], selectedPicks: Pick[]) {
+  const settledSelected = selectedPicks.filter((pick) => pick.status !== "pending");
+  const pendingSelected = selectedPicks.length - settledSelected.length;
+  const profit = roundUnits(settledSelected.reduce((total, pick) => total + pick.profit, 0));
+  const staked = roundUnits(settledSelected.reduce((total, pick) => total + pick.stake, 0));
+
+  return {
+    submitted: submittedPicks.length,
+    selected: selectedPicks.length,
+    settled: settledSelected.length,
+    pendingSelected,
+    staked,
+    profit,
+    roi: staked > 0 ? roundUnits((profit / staked) * 100) : 0
+  };
+}

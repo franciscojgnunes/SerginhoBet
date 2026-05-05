@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Match, Pick, Vote } from "./types";
 import {
   buildMatchSlate,
+  calculateDailyStats,
   calculateBankroll,
   calculateProfit,
   filterMatchesForDay,
@@ -149,5 +150,80 @@ describe("PickRoom domain logic", () => {
     ];
 
     expect(filterMatchesForDay(matches, "2026-05-05").map((match) => match.id)).toEqual(["today"]);
+  });
+
+  it("calculates daily totals and per-viewer stats for streamer decisions", () => {
+    const picks: Pick[] = [
+      {
+        ...basePick,
+        id: "final-won",
+        userId: "viewer-a",
+        status: "won",
+        stake: 2,
+        odds: 2,
+        profit: 2,
+        createdAt: "2026-05-05T10:00:00+01:00"
+      },
+      {
+        ...basePick,
+        id: "final-lost",
+        userId: "viewer-b",
+        status: "lost",
+        stake: 1,
+        odds: 1.8,
+        profit: -1,
+        createdAt: "2026-05-05T11:00:00+01:00"
+      },
+      {
+        ...basePick,
+        id: "suggestion-only",
+        userId: "viewer-a",
+        status: "pending",
+        profit: 0,
+        createdAt: "2026-05-05T12:00:00+01:00"
+      },
+      {
+        ...basePick,
+        id: "other-day",
+        userId: "viewer-a",
+        status: "won",
+        profit: 1,
+        createdAt: "2026-05-04T12:00:00+01:00"
+      }
+    ];
+
+    expect(calculateDailyStats(picks, ["final-won", "final-lost"], "2026-05-05")).toEqual({
+      total: {
+        submitted: 3,
+        selected: 2,
+        settled: 2,
+        pendingSelected: 0,
+        staked: 3,
+        profit: 1,
+        roi: 33.33
+      },
+      byViewer: [
+        {
+          userId: "viewer-a",
+          submitted: 2,
+          selected: 1,
+          settled: 1,
+          pendingSelected: 0,
+          staked: 2,
+          profit: 2,
+          roi: 100
+        },
+        {
+          userId: "viewer-b",
+          submitted: 1,
+          selected: 1,
+          settled: 1,
+          pendingSelected: 0,
+          staked: 1,
+          profit: -1,
+          roi: -100
+        }
+      ]
+    });
   });
 });

@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
+  Eye,
   Flame,
   Gauge,
   LogIn,
@@ -19,6 +20,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { fallbackMatches, users } from "./data";
 import {
+  calculateDailyStats,
   calculateBankroll,
   calculateProfit,
   scorePick,
@@ -153,6 +155,7 @@ export function App() {
   }
 
   const activeUser = userById(activeUserId);
+  const isStreamer = activeUser.role === "streamer";
   const selectedMatch = matches.find((match) => match.id === selectedMatchId) ?? matches[0];
   const pendingPicks = picks.filter((pick) => pick.status === "pending");
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
@@ -163,6 +166,8 @@ export function App() {
 
   const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
   const communityBankroll = calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds);
+  const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
+  const suggestedPicks = selectSlipPicks(picks, votes, 8);
 
   const stats = useMemo(() => {
     return users
@@ -239,6 +244,17 @@ export function App() {
     setDailySlip((slip) => ({ ...slip, status: "published" }));
   }
 
+  function toggleFinalPick(pickId: string) {
+    setDailySlip((slip) => {
+      const exists = slip.pickIds.includes(pickId);
+      return {
+        ...slip,
+        status: "draft",
+        pickIds: exists ? slip.pickIds.filter((id) => id !== pickId) : [...slip.pickIds, pickId]
+      };
+    });
+  }
+
   function settlePick(pickId: string, status: PickStatus) {
     setPicks((current) =>
       current.map((pick) =>
@@ -294,14 +310,23 @@ export function App() {
             as picks finais para a banca ficticia coletiva.
           </p>
           <div className="hero-actions">
-            <button onClick={generateSlip}>
-              <Sparkles size={18} />
-              Sugerir por votos
-            </button>
-            <button className="secondary" onClick={publishSlip}>
-              <CheckCircle2 size={18} />
-              Publicar escolhas do streamer
-            </button>
+            {isStreamer ? (
+              <>
+                <button onClick={generateSlip}>
+                  <Sparkles size={18} />
+                  Sugerir por votos
+                </button>
+                <button className="secondary" onClick={publishSlip}>
+                  <CheckCircle2 size={18} />
+                  Publicar escolhas do streamer
+                </button>
+              </>
+            ) : (
+              <button>
+                <Eye size={18} />
+                Ver picks do dia
+              </button>
+            )}
             <button className="ghost" onClick={syncTodayMatches}>
               <RefreshCw size={18} />
               Atualizar jogos
@@ -386,70 +411,117 @@ export function App() {
             <span>{selectedMatchPicks.length} picks</span>
           </div>
 
-          <form className="pick-form" onSubmit={submitPick}>
-            <label>
-              Mercado
-              <select
-                value={formState.marketType}
-                onChange={(event) =>
-                  setFormState((state) => ({
-                    ...state,
-                    marketType: event.target.value as MarketType,
-                    selection: ""
-                  }))
-                }
-              >
-                {marketOptions.map((market) => (
-                  <option key={market}>{market}</option>
-                ))}
-              </select>
-            </label>
-            <label className="selection-field">
-              Pick
-              <input
-                placeholder={marketPlaceholders[formState.marketType]}
-                value={formState.selection}
-                onChange={(event) => setFormState((state) => ({ ...state, selection: event.target.value }))}
-              />
-            </label>
-            <label>
-              Odd
-              <input
-                type="number"
-                step="0.01"
-                min="1.01"
-                value={formState.odds}
-                onChange={(event) => setFormState((state) => ({ ...state, odds: event.target.value }))}
-              />
-            </label>
-            <label>
-              Stake
-              <input
-                type="number"
-                step="0.5"
-                min="0.5"
-                value={formState.stake}
-                onChange={(event) => setFormState((state) => ({ ...state, stake: event.target.value }))}
-              />
-            </label>
-            <label>
-              Fonte
-              <input
-                placeholder="Bookmaker"
-                value={formState.bookmaker}
-                onChange={(event) => setFormState((state) => ({ ...state, bookmaker: event.target.value }))}
-              />
-            </label>
-            <label className="reason-field">
-              Argumento
-              <textarea
-                placeholder="Porque e que a comunidade deve confiar nesta pick?"
-                value={formState.reason}
-                onChange={(event) => setFormState((state) => ({ ...state, reason: event.target.value }))}
-              />
-            </label>
-            <button type="submit" disabled={!selectedMatch}>Submeter pick</button>
-          </form>
+          {isStreamer ? (
+            <section className="streamer-control">
+              <div className="section-title spread">
+                <div>
+                  <Sparkles size={18} />
+                  <h3>Painel streamer</h3>
+                </div>
+                <span>{dailySlip.pickIds.length} finais</span>
+              </div>
+              <div className="control-actions">
+                <button onClick={generateSlip}>
+                  <Sparkles size={16} />
+                  Preencher por votos
+                </button>
+                <button className="secondary" onClick={publishSlip}>
+                  <CheckCircle2 size={16} />
+                  Publicar finais
+                </button>
+              </div>
+              <div className="candidate-list">
+                {suggestedPicks.map((pick) => {
+                  const match = matches.find((item) => item.id === pick.matchId);
+                  const author = userById(pick.userId);
+                  const selected = dailySlip.pickIds.includes(pick.id);
+                  return (
+                    <div className={`candidate-row ${selected ? "selected" : ""}`} key={pick.id}>
+                      <div>
+                        <strong>{pick.selection}</strong>
+                        <small>
+                          {author.displayName} · {match?.homeTeam} vs {match?.awayTeam} · Score {scorePick(pick.id, votes)}
+                        </small>
+                      </div>
+                      <button onClick={() => toggleFinalPick(pick.id)}>{selected ? "Remover" : "Escolher"}</button>
+                    </div>
+                  );
+                })}
+                {suggestedPicks.length === 0 ? <p className="empty-copy">Ainda não há picks da comunidade para escolher.</p> : null}
+              </div>
+            </section>
+          ) : (
+            <section className="viewer-control">
+              <div className="section-title">
+                <Vote size={18} />
+                <h3>Painel viewer</h3>
+              </div>
+              <form className="pick-form" onSubmit={submitPick}>
+                <label>
+                  Mercado
+                  <select
+                    value={formState.marketType}
+                    onChange={(event) =>
+                      setFormState((state) => ({
+                        ...state,
+                        marketType: event.target.value as MarketType,
+                        selection: ""
+                      }))
+                    }
+                  >
+                    {marketOptions.map((market) => (
+                      <option key={market}>{market}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="selection-field">
+                  Pick
+                  <input
+                    placeholder={marketPlaceholders[formState.marketType]}
+                    value={formState.selection}
+                    onChange={(event) => setFormState((state) => ({ ...state, selection: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Odd
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1.01"
+                    value={formState.odds}
+                    onChange={(event) => setFormState((state) => ({ ...state, odds: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Stake
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    value={formState.stake}
+                    onChange={(event) => setFormState((state) => ({ ...state, stake: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Fonte
+                  <input
+                    placeholder="Bookmaker"
+                    value={formState.bookmaker}
+                    onChange={(event) => setFormState((state) => ({ ...state, bookmaker: event.target.value }))}
+                  />
+                </label>
+                <label className="reason-field">
+                  Argumento
+                  <textarea
+                    placeholder="Porque e que a comunidade deve confiar nesta pick?"
+                    value={formState.reason}
+                    onChange={(event) => setFormState((state) => ({ ...state, reason: event.target.value }))}
+                  />
+                </label>
+                <button type="submit" disabled={!selectedMatch}>Submeter pick</button>
+              </form>
+            </section>
+          )}
 
           <div className="pick-stack">
             {selectedMatchPicks.map((pick) => {
@@ -550,6 +622,43 @@ export function App() {
             </div>
           </section>
 
+          <section className="panel stats-panel">
+            <div className="section-title">
+              <CircleDollarSign size={18} />
+              <h3>Estatísticas do dia</h3>
+            </div>
+            <div className="stat-grid">
+              <span>Submetidas <b>{dailyStats.total.submitted}</b></span>
+              <span>Finais <b>{dailyStats.total.selected}</b></span>
+              <span>Lucro total <b>{dailyStats.total.profit >= 0 ? "+" : ""}{dailyStats.total.profit.toFixed(2)}u</b></span>
+              <span>ROI <b>{dailyStats.total.roi.toFixed(1)}%</b></span>
+            </div>
+            <div className="viewer-stats">
+              {users
+                .filter((user) => user.role !== "streamer")
+                .map((user) => {
+                  const row =
+                    dailyStats.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
+                      submitted: 0,
+                      selected: 0,
+                      settled: 0,
+                      pendingSelected: 0,
+                      staked: 0,
+                      profit: 0,
+                      roi: 0
+                    };
+                  return (
+                    <div className="viewer-stat-row" key={user.id}>
+                      <Avatar user={user} />
+                      <strong>{user.displayName}</strong>
+                      <small>{row.submitted} tips · {row.selected} finais</small>
+                      <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+                    </div>
+                  );
+                })}
+            </div>
+          </section>
+
           <section className="panel">
             <div className="section-title">
               <Trophy size={18} />
@@ -568,25 +677,27 @@ export function App() {
             </div>
           </section>
 
-          <section className="panel admin-panel">
-            <div className="section-title">
-              <Activity size={18} />
-              <h3>Resolver picks</h3>
-            </div>
-            {pendingPicks.slice(0, 5).map((pick) => (
-              <div className="settle-row" key={pick.id}>
-                <span>{pick.selection}</span>
-                <select onChange={(event) => settlePick(pick.id, event.target.value as PickStatus)} defaultValue="pending">
-                  <option value="pending">Pendente</option>
-                  <option value="won">Ganha</option>
-                  <option value="lost">Perdida</option>
-                  <option value="void">Void</option>
-                  <option value="half_won">Meia ganha</option>
-                  <option value="half_lost">Meia perdida</option>
-                </select>
+          {isStreamer ? (
+            <section className="panel admin-panel">
+              <div className="section-title">
+                <Activity size={18} />
+                <h3>Resolver picks</h3>
               </div>
-            ))}
-          </section>
+              {pendingPicks.slice(0, 8).map((pick) => (
+                <div className="settle-row" key={pick.id}>
+                  <span>{pick.selection}</span>
+                  <select onChange={(event) => settlePick(pick.id, event.target.value as PickStatus)} defaultValue="pending">
+                    <option value="pending">Pendente</option>
+                    <option value="won">Ganha</option>
+                    <option value="lost">Perdida</option>
+                    <option value="void">Void</option>
+                    <option value="half_won">Meia ganha</option>
+                    <option value="half_lost">Meia perdida</option>
+                  </select>
+                </div>
+              ))}
+            </section>
+          ) : null}
         </aside>
       </section>
 

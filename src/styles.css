@@ -423,6 +423,70 @@ h1 {
   padding: 12px;
 }
 
+.streamer-control,
+.viewer-control {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+.control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.control-actions button {
+  background: var(--lime);
+  color: #06130d;
+}
+
+.control-actions .secondary {
+  background: var(--green);
+}
+
+.candidate-list {
+  display: grid;
+  gap: 8px;
+}
+
+.candidate-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+  padding: 10px;
+}
+
+.candidate-row.selected {
+  background: rgba(183, 255, 52, 0.12);
+  border-color: var(--lime);
+}
+
+.candidate-row strong,
+.viewer-stat-row strong {
+  color: var(--text);
+}
+
+.candidate-row small {
+  color: var(--muted);
+  display: block;
+  font-size: 0.78rem;
+  margin-top: 3px;
+}
+
+.candidate-row button {
+  background: rgba(183, 255, 52, 0.12);
+  border: 1px solid var(--line-strong);
+  color: var(--lime);
+}
+
 .pick-form label {
   color: var(--muted);
   display: grid;
@@ -654,6 +718,52 @@ h1 {
   margin: 0;
 }
 
+.stats-panel {
+  background: rgba(14, 36, 24, 0.96);
+}
+
+.stat-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 12px;
+}
+
+.stat-grid span {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 10px;
+}
+
+.stat-grid b {
+  color: var(--lime);
+  display: block;
+  font-size: 1.05rem;
+  margin-top: 4px;
+}
+
+.viewer-stats {
+  display: grid;
+  gap: 8px;
+}
+
+.viewer-stat-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 34px 1fr auto auto;
+}
+
+.viewer-stat-row small {
+  color: var(--muted);
+}
+
+.viewer-stat-row b {
+  color: var(--green);
+}
+
 .leaderboard {
   display: grid;
   gap: 9px;
@@ -746,6 +856,19 @@ h1 {
 
   .pick-form {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .viewer-stat-row {
+    grid-template-columns: 34px 1fr;
+  }
+
+  .viewer-stat-row b,
+  .viewer-stat-row small {
+    grid-column: 1 / -1;
+  }
+
+  .candidate-row {
+    grid-template-columns: 1fr;
   }
 
   .pick-form .selection-field,
