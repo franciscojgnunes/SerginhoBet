@@ -1,4 +1,4 @@
-import type { Pick, PickStatus, Vote, VoteType } from "./types";
+import type { Match, Pick, PickStatus, Vote, VoteType } from "./types";
 
 export function scorePick(pickId: string, votes: Vote[]) {
   return votes
@@ -50,4 +50,19 @@ export function calculateBankroll(initial: number, picks: Pick[], slipPickIds: s
 
 export function roundUnits(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+export function buildMatchSlate(apiMatches: Match[], demoMatches: Match[], targetCount: number) {
+  const seen = new Set<string>();
+  const merged: Match[] = [];
+
+  for (const match of [...apiMatches, ...demoMatches]) {
+    const key = `${match.homeTeam.toLowerCase()}-${match.awayTeam.toLowerCase()}-${match.startsAt.slice(0, 10)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(match);
+    if (merged.length >= targetCount) break;
+  }
+
+  return merged;
 }

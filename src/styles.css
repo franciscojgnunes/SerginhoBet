@@ -320,6 +320,7 @@ h1 {
 }
 
 .workspace {
+  align-items: start;
   display: grid;
   gap: 18px;
   grid-template-columns: 300px minmax(0, 1fr) 390px;
@@ -362,6 +363,18 @@ h1 {
 
 .match-list {
   align-self: start;
+  max-height: 74vh;
+  overflow-y: auto;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.match-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.match-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
 }
 
 .match-row {
@@ -560,6 +573,7 @@ h1 {
 }
 
 .side-column {
+  align-self: start;
   display: grid;
   gap: 18px;
 }

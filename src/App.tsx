@@ -18,12 +18,13 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { fallbackMatches, initialPicks, initialVotes, users } from "./data";
-import { calculateBankroll, calculateProfit, scorePick, selectSlipPicks } from "./domain";
+import { buildMatchSlate, calculateBankroll, calculateProfit, scorePick, selectSlipPicks } from "./domain";
 import { fetchTodayMatches } from "./sportsApi";
 import type { DailySlip, MarketType, Match, Pick, PickStatus, User, VoteType } from "./types";
 
 const currentDate = new Date("2026-05-05T12:00:00+01:00");
 const communityInitialBankroll = 100;
+const targetMatchCount = 18;
 
 const marketOptions: MarketType[] = [
   "1X2",
@@ -97,7 +98,7 @@ export function App() {
   const [activeUserId, setActiveUserId] = useState("u-xico");
   const [matches, setMatches] = useState<Match[]>(fallbackMatches);
   const [selectedMatchId, setSelectedMatchId] = useState(fallbackMatches[0].id);
-  const [matchSync, setMatchSync] = useState<"loading" | "live" | "fallback">("loading");
+  const [matchSync, setMatchSync] = useState<"loading" | "live" | "mixed" | "fallback">("loading");
   const [picks, setPicks] = useState<Pick[]>(initialPicks);
   const [votes, setVotes] = useState(initialVotes);
   const [dailySlip, setDailySlip] = useState<DailySlip>({
@@ -123,10 +124,11 @@ export function App() {
     try {
       const todayMatches = await fetchTodayMatches(currentDate);
       if (todayMatches.length === 0) throw new Error("Sem jogos devolvidos pela API");
-      setMatches(todayMatches);
-      setSelectedMatchId(todayMatches[0].id);
-      setMatchSync("live");
-      setPicks(createStarterPicks(todayMatches));
+      const matchSlate = buildMatchSlate(todayMatches, fallbackMatches, targetMatchCount);
+      setMatches(matchSlate);
+      setSelectedMatchId(matchSlate[0].id);
+      setMatchSync(matchSlate.length > todayMatches.length ? "mixed" : "live");
+      setPicks(createStarterPicks(matchSlate));
       setVotes([]);
       setDailySlip({
         status: "draft",
@@ -273,6 +275,7 @@ export function App() {
             <RefreshCw size={15} />
             {matchSync === "loading" ? "A sincronizar jogos de hoje" : null}
             {matchSync === "live" ? "Jogos de hoje via TheSportsDB" : null}
+            {matchSync === "mixed" ? "Jogos reais + slate demo alargada" : null}
             {matchSync === "fallback" ? "API indisponivel, dados demo ativos" : null}
           </div>
           <h2>O boletim nasce da votacao da stream.</h2>
@@ -341,7 +344,7 @@ export function App() {
               <CalendarDays size={18} />
               <h3>Jogos de hoje</h3>
             </div>
-            <span>{matchSync === "live" ? "API" : "Demo"}</span>
+            <span>{matchSync === "mixed" ? "API + Demo" : matchSync === "live" ? "API" : "Demo"}</span>
           </div>
           {matches.map((match) => (
             <button

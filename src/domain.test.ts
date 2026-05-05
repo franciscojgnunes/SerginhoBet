@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Pick, Vote } from "./types";
-import { calculateBankroll, calculateProfit, scorePick, selectSlipPicks } from "./domain";
+import type { Match, Pick, Vote } from "./types";
+import { buildMatchSlate, calculateBankroll, calculateProfit, scorePick, selectSlipPicks } from "./domain";
 
 const basePick: Pick = {
   id: "pick-1",
@@ -67,5 +67,43 @@ describe("PickRoom domain logic", () => {
       settledProfit: 1.5,
       roi: 50
     });
+  });
+
+  it("tops up API matches with demo matches until the slate target is reached", () => {
+    const apiMatch: Match = {
+      id: "api-1",
+      competition: "Real League",
+      homeTeam: "Real A",
+      awayTeam: "Real B",
+      startsAt: "2026-05-05T12:00:00Z",
+      status: "scheduled",
+      source: "api"
+    };
+    const demoMatches: Match[] = [
+      {
+        id: "demo-1",
+        competition: "Demo League",
+        homeTeam: "Demo A",
+        awayTeam: "Demo B",
+        startsAt: "2026-05-05T14:00:00Z",
+        status: "scheduled",
+        source: "demo"
+      },
+      {
+        id: "demo-2",
+        competition: "Demo League",
+        homeTeam: "Demo C",
+        awayTeam: "Demo D",
+        startsAt: "2026-05-05T16:00:00Z",
+        status: "scheduled",
+        source: "demo"
+      }
+    ];
+
+    expect(buildMatchSlate([apiMatch], demoMatches, 3).map((match) => match.id)).toEqual([
+      "api-1",
+      "demo-1",
+      "demo-2"
+    ]);
   });
 });
