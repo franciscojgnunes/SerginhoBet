@@ -3,6 +3,7 @@ import type { Match, Pick, Vote } from "./types";
 import {
   buildMatchSlate,
   calculateDailyStats,
+  buildProfitTimeline,
   calculateBankroll,
   calculateProfit,
   filterMatchesForDay,
@@ -225,5 +226,18 @@ describe("PickRoom domain logic", () => {
         }
       ]
     });
+  });
+
+  it("builds a cumulative profit timeline for selected settled picks", () => {
+    const picks: Pick[] = [
+      { ...basePick, id: "a", status: "won", profit: 1.5, createdAt: "2026-05-05T09:00:00+01:00" },
+      { ...basePick, id: "b", status: "pending", profit: 0, createdAt: "2026-05-05T10:00:00+01:00" },
+      { ...basePick, id: "c", status: "lost", profit: -1, createdAt: "2026-05-05T11:00:00+01:00" }
+    ];
+
+    expect(buildProfitTimeline(picks, ["c", "a", "b"])).toEqual([
+      { label: "09:00", profit: 1.5, cumulative: 1.5 },
+      { label: "11:00", profit: -1, cumulative: 0.5 }
+    ]);
   });
 });

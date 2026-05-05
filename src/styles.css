@@ -129,6 +129,23 @@ h1 {
   padding: 8px;
 }
 
+.page-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.page-tabs button {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  min-height: 38px;
+}
+
+.page-tabs button.active {
+  background: var(--lime);
+  color: #06130d;
+}
+
 .login-panel select,
 .settle-row select,
 .pick-form input,
@@ -324,6 +341,18 @@ h1 {
   display: grid;
   gap: 18px;
   grid-template-columns: 300px minmax(0, 1fr) 390px;
+}
+
+.stats-page {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(360px, 0.8fr);
+}
+
+.stats-hero-panel,
+.stats-table-panel {
+  align-self: start;
+  min-width: 0;
 }
 
 .panel {
@@ -729,6 +758,10 @@ h1 {
   margin-bottom: 12px;
 }
 
+.stat-grid.wide {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .stat-grid span {
   background: #07150e;
   border: 1px solid var(--line);
@@ -762,6 +795,104 @@ h1 {
 
 .viewer-stat-row b {
   color: var(--green);
+}
+
+.chart-wrap {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 14px;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.chart-wrap svg {
+  display: block;
+  width: 100%;
+}
+
+.chart-axis {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--lime);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.chart-dot {
+  stroke: #06130d;
+  stroke-width: 3;
+}
+
+.chart-dot.positive {
+  fill: var(--green);
+}
+
+.chart-dot.negative {
+  fill: var(--danger);
+}
+
+.chart-wrap text {
+  fill: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.chart-empty {
+  align-items: center;
+  background: #07150e;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  display: flex;
+  justify-content: center;
+  min-height: 260px;
+  padding: 20px;
+  text-align: center;
+}
+
+.stats-table {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stats-table-head,
+.stats-table-row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(150px, 1.4fr) repeat(6, minmax(64px, 0.7fr));
+}
+
+.stats-table-head {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.stats-table-row {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 10px;
+}
+
+.stats-table-row b {
+  color: var(--green);
+}
+
+.viewer-cell {
+  align-items: center;
+  display: flex;
+  gap: 8px;
 }
 
 .leaderboard {
@@ -846,12 +977,37 @@ h1 {
 
   .metric-strip,
   .workspace,
+  .stats-page,
   .side-column {
     grid-template-columns: 1fr;
   }
 
   .login-panel {
-    justify-content: space-between;
+    align-items: stretch;
+    flex-direction: column;
+    justify-content: stretch;
+  }
+
+  .page-tabs {
+    width: 100%;
+  }
+
+  .page-tabs button {
+    flex: 1;
+  }
+
+  .stat-grid.wide {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stats-table {
+    overflow-x: auto;
+    max-width: calc(100vw - 28px);
+  }
+
+  .stats-table-head,
+  .stats-table-row {
+    min-width: 760px;
   }
 
   .pick-form {

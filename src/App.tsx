@@ -7,6 +7,7 @@ import {
   Eye,
   Flame,
   Gauge,
+  LineChart,
   LogIn,
   RefreshCw,
   ShieldCheck,
@@ -23,6 +24,7 @@ import {
   calculateDailyStats,
   calculateBankroll,
   calculateProfit,
+  buildProfitTimeline,
   scorePick,
   selectSlipPicks
 } from "./domain";
@@ -113,6 +115,7 @@ export function App() {
     pickIds: [],
     generatedAt: currentDate.toISOString()
   });
+  const [activePage, setActivePage] = useState<"tips" | "stats">("tips");
   const [formState, setFormState] = useState({
     marketType: "1X2" as MarketType,
     selection: "",
@@ -156,7 +159,8 @@ export function App() {
 
   const activeUser = userById(activeUserId);
   const isStreamer = activeUser.role === "streamer";
-  const selectedMatch = matches.find((match) => match.id === selectedMatchId) ?? matches[0];
+  const openMatches = matches.filter((match) => match.status !== "finished");
+  const selectedMatch = openMatches.find((match) => match.id === selectedMatchId) ?? openMatches[0];
   const pendingPicks = picks.filter((pick) => pick.status === "pending");
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
 
@@ -168,6 +172,7 @@ export function App() {
   const communityBankroll = calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds);
   const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
   const suggestedPicks = selectSlipPicks(picks, votes, 8);
+  const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
 
   const stats = useMemo(() => {
     return users
@@ -283,6 +288,14 @@ export function App() {
         </div>
 
         <div className="login-panel">
+          <div className="page-tabs">
+            <button className={activePage === "tips" ? "active" : ""} onClick={() => setActivePage("tips")}>
+              Tips
+            </button>
+            <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>
+              Estatísticas
+            </button>
+          </div>
           <LogIn size={18} />
           <select value={activeUserId} onChange={(event) => setActiveUserId(event.target.value)}>
             {users.map((user) => (
@@ -352,7 +365,7 @@ export function App() {
       <section className="metric-strip">
         <div>
           <CalendarDays size={18} />
-          <span>{matches.length}</span>
+          <span>{openMatches.length}</span>
           <p>Jogos hoje</p>
         </div>
         <div>
@@ -372,6 +385,66 @@ export function App() {
         </div>
       </section>
 
+      {activePage === "stats" ? (
+        <section className="stats-page">
+          <section className="panel stats-hero-panel">
+            <div className="section-title">
+              <LineChart size={18} />
+              <h3>Estatísticas do dia</h3>
+            </div>
+            <div className="stat-grid wide">
+              <span>Tips submetidas <b>{dailyStats.total.submitted}</b></span>
+              <span>Finais do streamer <b>{dailyStats.total.selected}</b></span>
+              <span>Lucro total <b>{dailyStats.total.profit >= 0 ? "+" : ""}{dailyStats.total.profit.toFixed(2)}u</b></span>
+              <span>ROI <b>{dailyStats.total.roi.toFixed(1)}%</b></span>
+            </div>
+            <ProfitChart points={profitTimeline} />
+          </section>
+
+          <section className="panel stats-table-panel">
+            <div className="section-title">
+              <Trophy size={18} />
+              <h3>Performance por viewer</h3>
+            </div>
+            <div className="stats-table">
+              <div className="stats-table-head">
+                <span>Viewer</span>
+                <span>Tips</span>
+                <span>Finais</span>
+                <span>Resolvidas</span>
+                <span>Stake</span>
+                <span>Lucro</span>
+                <span>ROI</span>
+              </div>
+              {users
+                .filter((user) => user.role !== "streamer")
+                .map((user) => {
+                  const row =
+                    dailyStats.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
+                      submitted: 0,
+                      selected: 0,
+                      settled: 0,
+                      pendingSelected: 0,
+                      staked: 0,
+                      profit: 0,
+                      roi: 0
+                    };
+                  return (
+                    <div className="stats-table-row" key={user.id}>
+                      <span className="viewer-cell"><Avatar user={user} /> {user.displayName}</span>
+                      <span>{row.submitted}</span>
+                      <span>{row.selected}</span>
+                      <span>{row.settled}</span>
+                      <span>{row.staked.toFixed(2)}u</span>
+                      <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+                      <span>{row.roi.toFixed(1)}%</span>
+                    </div>
+                  );
+                })}
+            </div>
+          </section>
+        </section>
+      ) : (
       <section className="workspace">
         <aside className="panel match-list">
           <div className="section-title spread">
@@ -381,7 +454,7 @@ export function App() {
             </div>
             <span>{matchSync === "live" ? "API" : "Sem demo"}</span>
           </div>
-          {matches.map((match) => (
+          {openMatches.map((match) => (
             <button
               className={`match-row ${match.id === selectedMatch.id ? "selected" : ""}`}
               key={match.id}
@@ -397,8 +470,8 @@ export function App() {
               </small>
             </button>
           ))}
-          {matches.length === 0 ? (
-            <p className="empty-copy">Nao ha jogos reais carregados para este dia. Experimenta atualizar daqui a pouco.</p>
+          {openMatches.length === 0 ? (
+            <p className="empty-copy">Nao ha jogos por terminar para este dia. Os terminados ficam fora da área de tips.</p>
           ) : null}
         </aside>
 
@@ -700,12 +773,51 @@ export function App() {
           ) : null}
         </aside>
       </section>
+      )}
 
       <footer className="disclaimer">
         <UserRound size={16} />
         Unidades ficticias. Sem dinheiro real, depositos, cashout ou execucao de apostas.
       </footer>
     </main>
+  );
+}
+
+function ProfitChart({ points }: { points: Array<{ label: string; profit: number; cumulative: number }> }) {
+  if (points.length === 0) {
+    return <div className="chart-empty">Ainda não há picks finais resolvidas para desenhar evolução.</div>;
+  }
+
+  const width = 760;
+  const height = 260;
+  const padding = 34;
+  const values = points.map((point) => point.cumulative);
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const range = max - min || 1;
+
+  const coords = points.map((point, index) => {
+    const x = padding + (index / Math.max(points.length - 1, 1)) * (width - padding * 2);
+    const y = height - padding - ((point.cumulative - min) / range) * (height - padding * 2);
+    return { ...point, x, y };
+  });
+
+  const path = coords.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const zeroY = height - padding - ((0 - min) / range) * (height - padding * 2);
+
+  return (
+    <div className="chart-wrap">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Evolução do lucro das picks finais">
+        <line className="chart-axis" x1={padding} x2={width - padding} y1={zeroY} y2={zeroY} />
+        <path className="chart-line" d={path} />
+        {coords.map((point) => (
+          <g key={`${point.label}-${point.cumulative}`}>
+            <circle className={point.cumulative >= 0 ? "chart-dot positive" : "chart-dot negative"} cx={point.x} cy={point.y} r="5" />
+            <text x={point.x} y={height - 10} textAnchor="middle">{point.label}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 }
 

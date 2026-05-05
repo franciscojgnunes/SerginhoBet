@@ -90,6 +90,25 @@ export function calculateDailyStats(picks: Pick[], slipPickIds: string[], day: s
   };
 }
 
+export function buildProfitTimeline(picks: Pick[], slipPickIds: string[]) {
+  let cumulative = 0;
+
+  return picks
+    .filter((pick) => slipPickIds.includes(pick.id) && pick.status !== "pending")
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+    .map((pick) => {
+      cumulative = roundUnits(cumulative + pick.profit);
+      return {
+        label: new Date(pick.createdAt).toLocaleTimeString("pt-PT", {
+          hour: "2-digit",
+          minute: "2-digit"
+        }),
+        profit: pick.profit,
+        cumulative
+      };
+    });
+}
+
 function summarizeDailyPicks(submittedPicks: Pick[], selectedPicks: Pick[]) {
   const settledSelected = selectedPicks.filter((pick) => pick.status !== "pending");
   const pendingSelected = selectedPicks.length - settledSelected.length;
