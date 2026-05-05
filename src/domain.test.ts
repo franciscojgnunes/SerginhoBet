@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Match, Pick, Vote } from "./types";
-import { buildMatchSlate, calculateBankroll, calculateProfit, scorePick, selectSlipPicks } from "./domain";
+import {
+  buildMatchSlate,
+  calculateBankroll,
+  calculateProfit,
+  filterMatchesForDay,
+  scorePick,
+  selectSlipPicks
+} from "./domain";
 
 const basePick: Pick = {
   id: "pick-1",
@@ -105,5 +112,28 @@ describe("PickRoom domain logic", () => {
       "demo-1",
       "demo-2"
     ]);
+  });
+
+  it("filters the match slate to the selected tip day", () => {
+    const matches: Match[] = [
+      {
+        id: "today",
+        competition: "Liga",
+        homeTeam: "Hoje A",
+        awayTeam: "Hoje B",
+        startsAt: "2026-05-05T23:30:00+01:00",
+        status: "scheduled"
+      },
+      {
+        id: "tomorrow",
+        competition: "Liga",
+        homeTeam: "Amanha A",
+        awayTeam: "Amanha B",
+        startsAt: "2026-05-06T00:30:00+01:00",
+        status: "scheduled"
+      }
+    ];
+
+    expect(filterMatchesForDay(matches, "2026-05-05").map((match) => match.id)).toEqual(["today"]);
   });
 });

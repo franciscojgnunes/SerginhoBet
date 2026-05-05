@@ -66,3 +66,7 @@ export function buildMatchSlate(apiMatches: Match[], demoMatches: Match[], targe
 
   return merged;
 }
+
+export function filterMatchesForDay(matches: Match[], day: string) {
+  return matches.filter((match) => match.startsAt.slice(0, 10) === day);
+}

@@ -18,11 +18,19 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { fallbackMatches, initialPicks, initialVotes, users } from "./data";
-import { buildMatchSlate, calculateBankroll, calculateProfit, scorePick, selectSlipPicks } from "./domain";
+import {
+  buildMatchSlate,
+  calculateBankroll,
+  calculateProfit,
+  filterMatchesForDay,
+  scorePick,
+  selectSlipPicks
+} from "./domain";
 import { fetchTodayMatches } from "./sportsApi";
 import type { DailySlip, MarketType, Match, Pick, PickStatus, User, VoteType } from "./types";
 
 const currentDate = new Date("2026-05-05T12:00:00+01:00");
+const tipDay = "2026-05-05";
 const communityInitialBankroll = 100;
 const targetMatchCount = 18;
 
@@ -124,7 +132,7 @@ export function App() {
     try {
       const todayMatches = await fetchTodayMatches(currentDate);
       if (todayMatches.length === 0) throw new Error("Sem jogos devolvidos pela API");
-      const matchSlate = buildMatchSlate(todayMatches, fallbackMatches, targetMatchCount);
+      const matchSlate = filterMatchesForDay(buildMatchSlate(todayMatches, fallbackMatches, targetMatchCount), tipDay);
       setMatches(matchSlate);
       setSelectedMatchId(matchSlate[0].id);
       setMatchSync(matchSlate.length > todayMatches.length ? "mixed" : "live");
@@ -275,22 +283,22 @@ export function App() {
             <RefreshCw size={15} />
             {matchSync === "loading" ? "A sincronizar jogos de hoje" : null}
             {matchSync === "live" ? "Jogos de hoje via TheSportsDB" : null}
-            {matchSync === "mixed" ? "Jogos reais + slate demo alargada" : null}
+            {matchSync === "mixed" ? "Tips de hoje: reais + demo filtrados" : null}
             {matchSync === "fallback" ? "API indisponivel, dados demo ativos" : null}
           </div>
           <h2>O boletim nasce da votacao da stream.</h2>
           <p>
-            Jogos de hoje entram automaticamente, a comunidade mete odds manuais, vota nas melhores picks e
-            decide onde arriscar a banca ficticia coletiva.
+            So entram jogos do dia. A comunidade sugere e vota nas melhores tips, mas o SerginhoEsteves escolhe
+            as picks finais para a banca ficticia coletiva.
           </p>
           <div className="hero-actions">
             <button onClick={generateSlip}>
               <Sparkles size={18} />
-              Gerar boletim
+              Sugerir por votos
             </button>
             <button className="secondary" onClick={publishSlip}>
               <CheckCircle2 size={18} />
-              Publicar decisao
+              Publicar escolhas do streamer
             </button>
             <button className="ghost" onClick={syncTodayMatches}>
               <RefreshCw size={18} />
@@ -328,7 +336,7 @@ export function App() {
         <div>
           <ShieldCheck size={18} />
           <span>{topSlipPicks.length}</span>
-          <p>Decididas por todos</p>
+          <p>Escolhidas pelo streamer</p>
         </div>
         <div>
           <CircleDollarSign size={18} />
@@ -489,7 +497,7 @@ export function App() {
             <div className="section-title spread">
               <div>
                 <ShieldCheck size={18} />
-                <h3>Boletim decidido</h3>
+                <h3>Picks finais do streamer</h3>
               </div>
               <span className={`slip-state ${dailySlip.status}`}>{dailySlip.status}</span>
             </div>
@@ -508,7 +516,9 @@ export function App() {
                   </div>
                 );
               })}
-              {topSlipPicks.length === 0 ? <p className="empty-copy">Gera o boletim para escolher as picks mais votadas.</p> : null}
+              {topSlipPicks.length === 0 ? (
+                <p className="empty-copy">Usa os votos como sugestao; o streamer publica as picks finais.</p>
+              ) : null}
             </div>
             <div className="combined-odds">
               <span>Odd combinada</span>

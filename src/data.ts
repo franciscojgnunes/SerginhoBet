@@ -2,9 +2,9 @@ import type { Match, Pick, User, Vote } from "./types";
 
 export const users: User[] = [
   { id: "u-serginho", displayName: "SerginhoEsteves", role: "streamer", avatarColor: "#b7ff34" },
-  { id: "u-xico", displayName: "Xico", role: "viewer", avatarColor: "#00a85a" },
-  { id: "u-bytex", displayName: "Bytex", role: "mod", avatarColor: "#16d782" },
-  { id: "u-grilo", displayName: "Grilo", role: "viewer", avatarColor: "#064e3b" }
+  { id: "u-xico", displayName: "Chicao", role: "viewer", avatarColor: "#00a85a" },
+  { id: "u-bytex", displayName: "Gaxolas", role: "mod", avatarColor: "#16d782" },
+  { id: "u-grilo", displayName: "Lazy", role: "viewer", avatarColor: "#064e3b" }
 ];
 
 export const fallbackMatches: Match[] = [
@@ -188,7 +188,7 @@ export const fallbackMatches: Match[] = [
     country: "United States",
     homeTeam: "Inter Miami",
     awayTeam: "Atlanta United",
-    startsAt: "2026-05-05T00:30:00+01:00",
+    startsAt: "2026-05-05T23:30:00+01:00",
     status: "finished",
     homeScore: 3,
     awayScore: 1,
