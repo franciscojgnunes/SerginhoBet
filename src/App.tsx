@@ -1,10 +1,13 @@
 import {
   Activity,
-  Award,
+  Banknote,
   CalendarDays,
   CheckCircle2,
+  CircleDollarSign,
   Flame,
+  Gauge,
   LogIn,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   ThumbsDown,
@@ -13,11 +16,42 @@ import {
   UserRound,
   Vote
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
-import { initialPicks, initialVotes, matches, users } from "./data";
-import type { DailySlip, MarketType, Pick, PickStatus, User, VoteType } from "./types";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { fallbackMatches, initialPicks, initialVotes, users } from "./data";
+import { calculateBankroll, calculateProfit, scorePick, selectSlipPicks } from "./domain";
+import { fetchTodayMatches } from "./sportsApi";
+import type { DailySlip, MarketType, Match, Pick, PickStatus, User, VoteType } from "./types";
 
 const currentDate = new Date("2026-05-05T12:00:00+01:00");
+const communityInitialBankroll = 100;
+
+const marketOptions: MarketType[] = [
+  "1X2",
+  "Dupla chance",
+  "Over/Under",
+  "BTTS",
+  "Handicap",
+  "Resultado correto",
+  "Intervalo/Final",
+  "Marcador",
+  "Cartoes",
+  "Cantos",
+  "Outro"
+];
+
+const marketPlaceholders: Record<MarketType, string> = {
+  "1X2": "Casa vence / Empate / Fora vence",
+  "Dupla chance": "Casa ou empate",
+  "Over/Under": "Mais de 2.5 golos",
+  BTTS: "Ambas marcam: Sim",
+  Handicap: "Casa -1.0",
+  "Resultado correto": "2-1",
+  "Intervalo/Final": "Empate / Casa",
+  Marcador: "Jogador marca a qualquer momento",
+  Cartoes: "Mais de 4.5 cartoes",
+  Cantos: "Mais de 8.5 cantos",
+  Outro: "Escreve o mercado"
+};
 
 function formatKickoff(value: string) {
   return new Intl.DateTimeFormat("pt-PT", {
@@ -27,14 +61,6 @@ function formatKickoff(value: string) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
-}
-
-function getProfit(status: PickStatus, stake: number, odds: number) {
-  if (status === "won") return stake * (odds - 1);
-  if (status === "lost") return -stake;
-  if (status === "void" || status === "pending") return 0;
-  if (status === "half_won") return (stake * (odds - 1)) / 2;
-  return -stake / 2;
 }
 
 function statusLabel(status: PickStatus) {
@@ -49,14 +75,10 @@ function statusLabel(status: PickStatus) {
   return labels[status];
 }
 
-function voteScore(pickId: string, votes: { pickId: string; userId: string; type: VoteType }[]) {
-  return votes
-    .filter((voteItem) => voteItem.pickId === pickId)
-    .reduce((total, voteItem) => {
-      if (voteItem.type === "trust") return total + 1;
-      if (voteItem.type === "strong") return total + 2;
-      return total - 1;
-    }, 0);
+function matchStatusLabel(match: Match) {
+  if (match.status === "live") return "Ao vivo";
+  if (match.status === "finished") return "Terminado";
+  return "Agendado";
 }
 
 function userById(userId: string) {
@@ -73,7 +95,9 @@ function Avatar({ user }: { user: User }) {
 
 export function App() {
   const [activeUserId, setActiveUserId] = useState("u-xico");
-  const [selectedMatchId, setSelectedMatchId] = useState(matches[0].id);
+  const [matches, setMatches] = useState<Match[]>(fallbackMatches);
+  const [selectedMatchId, setSelectedMatchId] = useState(fallbackMatches[0].id);
+  const [matchSync, setMatchSync] = useState<"loading" | "live" | "fallback">("loading");
   const [picks, setPicks] = useState<Pick[]>(initialPicks);
   const [votes, setVotes] = useState(initialVotes);
   const [dailySlip, setDailySlip] = useState<DailySlip>({
@@ -90,10 +114,43 @@ export function App() {
     reason: ""
   });
 
+  useEffect(() => {
+    void syncTodayMatches();
+  }, []);
+
+  async function syncTodayMatches() {
+    setMatchSync("loading");
+    try {
+      const todayMatches = await fetchTodayMatches(currentDate);
+      if (todayMatches.length === 0) throw new Error("Sem jogos devolvidos pela API");
+      setMatches(todayMatches);
+      setSelectedMatchId(todayMatches[0].id);
+      setMatchSync("live");
+      setPicks(createStarterPicks(todayMatches));
+      setVotes([]);
+      setDailySlip({
+        status: "draft",
+        pickIds: [],
+        generatedAt: new Date().toISOString()
+      });
+    } catch {
+      setMatches(fallbackMatches);
+      setSelectedMatchId(fallbackMatches[0].id);
+      setMatchSync("fallback");
+    }
+  }
+
   const activeUser = userById(activeUserId);
   const selectedMatch = matches.find((match) => match.id === selectedMatchId) ?? matches[0];
   const pendingPicks = picks.filter((pick) => pick.status === "pending");
   const selectedMatchPicks = picks.filter((pick) => pick.matchId === selectedMatch.id);
+
+  const topSlipPicks = dailySlip.pickIds
+    .map((pickId) => picks.find((pick) => pick.id === pickId))
+    .filter((pick): pick is Pick => Boolean(pick));
+
+  const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
+  const communityBankroll = calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds);
 
   const stats = useMemo(() => {
     return users
@@ -112,12 +169,6 @@ export function App() {
       })
       .sort((a, b) => b.profit - a.profit);
   }, [picks]);
-
-  const topSlipPicks = dailySlip.pickIds
-    .map((pickId) => picks.find((pick) => pick.id === pickId))
-    .filter((pick): pick is Pick => Boolean(pick));
-
-  const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
 
   function submitPick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -162,16 +213,18 @@ export function App() {
   }
 
   function generateSlip() {
-    const bestPickIds = [...pendingPicks]
-      .sort((left, right) => voteScore(right.id, votes) - voteScore(left.id, votes))
-      .slice(0, 3)
-      .map((pick) => pick.id);
+    const bestPickIds = selectSlipPicks(picks, votes, 4).map((pick) => pick.id);
 
     setDailySlip({
       status: "draft",
       pickIds: bestPickIds,
       generatedAt: new Date().toISOString()
     });
+  }
+
+  function publishSlip() {
+    if (dailySlip.pickIds.length === 0) generateSlip();
+    setDailySlip((slip) => ({ ...slip, status: "published" }));
   }
 
   function settlePick(pickId: string, status: PickStatus) {
@@ -181,7 +234,7 @@ export function App() {
           ? {
               ...pick,
               status,
-              profit: getProfit(status, pick.stake, pick.odds)
+              profit: calculateProfit(status, pick.stake, pick.odds)
             }
           : pick
       )
@@ -197,7 +250,7 @@ export function App() {
           </div>
           <div>
             <h1>PickRoom SerginhoEsteves</h1>
-            <p>Predictions sociais de futebol com unidades ficticias</p>
+            <p>Comunidade Twitch, picks de futebol e banca ficticia coletiva</p>
           </div>
         </div>
 
@@ -216,44 +269,79 @@ export function App() {
 
       <section className="hero-grid">
         <div className="hero-copy">
-          <h2>Boletim da comunidade, criado pelos viewers.</h2>
+          <div className={`sync-chip ${matchSync}`}>
+            <RefreshCw size={15} />
+            {matchSync === "loading" ? "A sincronizar jogos de hoje" : null}
+            {matchSync === "live" ? "Jogos de hoje via TheSportsDB" : null}
+            {matchSync === "fallback" ? "API indisponivel, dados demo ativos" : null}
+          </div>
+          <h2>O boletim nasce da votacao da stream.</h2>
           <p>
-            Jogos entram automaticamente, odds ficam manuais, e a comunidade decide quais picks merecem ir para
-            o boletim do dia.
+            Jogos de hoje entram automaticamente, a comunidade mete odds manuais, vota nas melhores picks e
+            decide onde arriscar a banca ficticia coletiva.
           </p>
           <div className="hero-actions">
             <button onClick={generateSlip}>
               <Sparkles size={18} />
               Gerar boletim
             </button>
-            <button className="secondary" onClick={() => setDailySlip((slip) => ({ ...slip, status: "published" }))}>
+            <button className="secondary" onClick={publishSlip}>
               <CheckCircle2 size={18} />
-              Publicar
+              Publicar decisao
+            </button>
+            <button className="ghost" onClick={syncTodayMatches}>
+              <RefreshCw size={18} />
+              Atualizar jogos
             </button>
           </div>
         </div>
 
-        <div className="metric-strip">
-          <div>
-            <span>{matches.length}</span>
-            <p>Jogos sync</p>
+        <div className="bankroll-card">
+          <div className="bankroll-top">
+            <Banknote size={24} />
+            <span>Banca da comunidade</span>
           </div>
-          <div>
-            <span>{pendingPicks.length}</span>
-            <p>Picks pendentes</p>
+          <strong>{communityBankroll.current.toFixed(2)}u</strong>
+          <div className="bankroll-grid">
+            <span>Inicial <b>{communityBankroll.initial}u</b></span>
+            <span>Exposto <b>{communityBankroll.exposure.toFixed(2)}u</b></span>
+            <span>Lucro <b>{communityBankroll.settledProfit >= 0 ? "+" : ""}{communityBankroll.settledProfit.toFixed(2)}u</b></span>
+            <span>ROI <b>{communityBankroll.roi.toFixed(1)}%</b></span>
           </div>
-          <div>
-            <span>{topSlipPicks.length}</span>
-            <p>No boletim</p>
-          </div>
+        </div>
+      </section>
+
+      <section className="metric-strip">
+        <div>
+          <CalendarDays size={18} />
+          <span>{matches.length}</span>
+          <p>Jogos hoje</p>
+        </div>
+        <div>
+          <Vote size={18} />
+          <span>{pendingPicks.length}</span>
+          <p>Picks em votacao</p>
+        </div>
+        <div>
+          <ShieldCheck size={18} />
+          <span>{topSlipPicks.length}</span>
+          <p>Decididas por todos</p>
+        </div>
+        <div>
+          <CircleDollarSign size={18} />
+          <span>{topSlipPicks.length ? combinedOdds.toFixed(2) : "0.00"}</span>
+          <p>Odd combinada</p>
         </div>
       </section>
 
       <section className="workspace">
         <aside className="panel match-list">
-          <div className="section-title">
-            <CalendarDays size={18} />
-            <h3>Jogos importados</h3>
+          <div className="section-title spread">
+            <div>
+              <CalendarDays size={18} />
+              <h3>Jogos de hoje</h3>
+            </div>
+            <span>{matchSync === "live" ? "API" : "Demo"}</span>
           </div>
           {matches.map((match) => (
             <button
@@ -266,8 +354,8 @@ export function App() {
                 {match.homeTeam} vs {match.awayTeam}
               </strong>
               <small>
-                {formatKickoff(match.startsAt)}
-                {match.status === "finished" && ` · ${match.homeScore}-${match.awayScore}`}
+                {formatKickoff(match.startsAt)} · {matchStatusLabel(match)}
+                {match.homeScore !== undefined && match.awayScore !== undefined ? ` · ${match.homeScore}-${match.awayScore}` : ""}
               </small>
             </button>
           ))}
@@ -283,52 +371,74 @@ export function App() {
           </div>
 
           <form className="pick-form" onSubmit={submitPick}>
-            <select
-              value={formState.marketType}
-              onChange={(event) => setFormState((state) => ({ ...state, marketType: event.target.value as MarketType }))}
-            >
-              <option>1X2</option>
-              <option>Over/Under</option>
-              <option>BTTS</option>
-              <option>Handicap</option>
-              <option>Outro</option>
-            </select>
-            <input
-              placeholder="Selecao: Sporting vence"
-              value={formState.selection}
-              onChange={(event) => setFormState((state) => ({ ...state, selection: event.target.value }))}
-            />
-            <input
-              type="number"
-              step="0.01"
-              min="1.01"
-              value={formState.odds}
-              onChange={(event) => setFormState((state) => ({ ...state, odds: event.target.value }))}
-            />
-            <input
-              type="number"
-              step="0.5"
-              min="0.5"
-              value={formState.stake}
-              onChange={(event) => setFormState((state) => ({ ...state, stake: event.target.value }))}
-            />
-            <input
-              placeholder="Bookmaker"
-              value={formState.bookmaker}
-              onChange={(event) => setFormState((state) => ({ ...state, bookmaker: event.target.value }))}
-            />
-            <textarea
-              placeholder="Justificacao da pick"
-              value={formState.reason}
-              onChange={(event) => setFormState((state) => ({ ...state, reason: event.target.value }))}
-            />
+            <label>
+              Mercado
+              <select
+                value={formState.marketType}
+                onChange={(event) =>
+                  setFormState((state) => ({
+                    ...state,
+                    marketType: event.target.value as MarketType,
+                    selection: ""
+                  }))
+                }
+              >
+                {marketOptions.map((market) => (
+                  <option key={market}>{market}</option>
+                ))}
+              </select>
+            </label>
+            <label className="selection-field">
+              Pick
+              <input
+                placeholder={marketPlaceholders[formState.marketType]}
+                value={formState.selection}
+                onChange={(event) => setFormState((state) => ({ ...state, selection: event.target.value }))}
+              />
+            </label>
+            <label>
+              Odd
+              <input
+                type="number"
+                step="0.01"
+                min="1.01"
+                value={formState.odds}
+                onChange={(event) => setFormState((state) => ({ ...state, odds: event.target.value }))}
+              />
+            </label>
+            <label>
+              Stake
+              <input
+                type="number"
+                step="0.5"
+                min="0.5"
+                value={formState.stake}
+                onChange={(event) => setFormState((state) => ({ ...state, stake: event.target.value }))}
+              />
+            </label>
+            <label>
+              Fonte
+              <input
+                placeholder="Bookmaker"
+                value={formState.bookmaker}
+                onChange={(event) => setFormState((state) => ({ ...state, bookmaker: event.target.value }))}
+              />
+            </label>
+            <label className="reason-field">
+              Argumento
+              <textarea
+                placeholder="Porque e que a comunidade deve confiar nesta pick?"
+                value={formState.reason}
+                onChange={(event) => setFormState((state) => ({ ...state, reason: event.target.value }))}
+              />
+            </label>
             <button type="submit">Submeter pick</button>
           </form>
 
           <div className="pick-stack">
             {selectedMatchPicks.map((pick) => {
               const author = userById(pick.userId);
-              const score = voteScore(pick.id, votes);
+              const score = scorePick(pick.id, votes);
               return (
                 <article className="pick-card" key={pick.id}>
                   <div className="pick-header">
@@ -376,7 +486,7 @@ export function App() {
             <div className="section-title spread">
               <div>
                 <ShieldCheck size={18} />
-                <h3>Boletim do dia</h3>
+                <h3>Boletim decidido</h3>
               </div>
               <span className={`slip-state ${dailySlip.status}`}>{dailySlip.status}</span>
             </div>
@@ -389,12 +499,13 @@ export function App() {
                     <div>
                       <strong>{pick.selection}</strong>
                       <small>
-                        {match?.homeTeam} vs {match?.awayTeam} · @{pick.odds.toFixed(2)}
+                        {match?.homeTeam} vs {match?.awayTeam} · @{pick.odds.toFixed(2)} · {pick.stake}u
                       </small>
                     </div>
                   </div>
                 );
               })}
+              {topSlipPicks.length === 0 ? <p className="empty-copy">Gera o boletim para escolher as picks mais votadas.</p> : null}
             </div>
             <div className="combined-odds">
               <span>Odd combinada</span>
@@ -402,9 +513,28 @@ export function App() {
             </div>
           </section>
 
+          <section className="panel bank-mini">
+            <div className="section-title">
+              <Gauge size={18} />
+              <h3>Estado da banca</h3>
+            </div>
+            <div className="bank-line">
+              <span>Disponivel</span>
+              <strong>{(communityBankroll.current - communityBankroll.exposure).toFixed(2)}u</strong>
+            </div>
+            <div className="bank-line">
+              <span>Exposicao boletim</span>
+              <strong>{communityBankroll.exposure.toFixed(2)}u</strong>
+            </div>
+            <div className="bank-line">
+              <span>Lucro fechado</span>
+              <strong>{communityBankroll.settledProfit >= 0 ? "+" : ""}{communityBankroll.settledProfit.toFixed(2)}u</strong>
+            </div>
+          </section>
+
           <section className="panel">
             <div className="section-title">
-              <Award size={18} />
+              <Trophy size={18} />
               <h3>Leaderboard</h3>
             </div>
             <div className="leaderboard">
@@ -423,9 +553,9 @@ export function App() {
           <section className="panel admin-panel">
             <div className="section-title">
               <Activity size={18} />
-              <h3>Admin settlement</h3>
+              <h3>Resolver picks</h3>
             </div>
-            {pendingPicks.slice(0, 4).map((pick) => (
+            {pendingPicks.slice(0, 5).map((pick) => (
               <div className="settle-row" key={pick.id}>
                 <span>{pick.selection}</span>
                 <select onChange={(event) => settlePick(pick.id, event.target.value as PickStatus)} defaultValue="pending">
@@ -448,4 +578,41 @@ export function App() {
       </footer>
     </main>
   );
+}
+
+function createStarterPicks(todayMatches: Match[]): Pick[] {
+  const first = todayMatches[0];
+  const second = todayMatches[1] ?? todayMatches[0];
+  if (!first) return [];
+
+  return [
+    {
+      id: "api-p-1",
+      matchId: first.id,
+      userId: "u-xico",
+      marketType: "1X2",
+      selection: `${first.homeTeam} vence`,
+      odds: 2.1,
+      stake: 1,
+      bookmaker: "Manual",
+      reason: "Pick inicial para testar a votacao da comunidade com jogos reais de hoje.",
+      status: "pending",
+      profit: 0,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "api-p-2",
+      matchId: second.id,
+      userId: "u-bytex",
+      marketType: "Over/Under",
+      selection: "Mais de 2.5 golos",
+      odds: 1.85,
+      stake: 1,
+      bookmaker: "Manual",
+      reason: "Mercado popular para simular odds manuais enquanto a API so fornece calendario/resultados.",
+      status: "pending",
+      profit: 0,
+      createdAt: new Date().toISOString()
+    }
+  ];
 }

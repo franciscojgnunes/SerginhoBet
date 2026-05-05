@@ -1,46 +1,46 @@
 import type { Match, Pick, User, Vote } from "./types";
 
 export const users: User[] = [
-  { id: "u-serginho", displayName: "SerginhoEsteves", role: "streamer", avatarColor: "#7c3aed" },
-  { id: "u-xico", displayName: "Xico", role: "viewer", avatarColor: "#059669" },
-  { id: "u-bytex", displayName: "Bytex", role: "mod", avatarColor: "#2563eb" },
-  { id: "u-grilo", displayName: "Grilo", role: "viewer", avatarColor: "#dc2626" }
+  { id: "u-serginho", displayName: "SerginhoEsteves", role: "streamer", avatarColor: "#b7ff34" },
+  { id: "u-xico", displayName: "Xico", role: "viewer", avatarColor: "#00a85a" },
+  { id: "u-bytex", displayName: "Bytex", role: "mod", avatarColor: "#16d782" },
+  { id: "u-grilo", displayName: "Grilo", role: "viewer", avatarColor: "#064e3b" }
 ];
 
-export const matches: Match[] = [
+export const fallbackMatches: Match[] = [
   {
     id: "m-1",
-    competition: "Primeira Liga",
-    homeTeam: "Sporting",
-    awayTeam: "Porto",
-    startsAt: "2026-05-05T20:15:00+01:00",
-    status: "scheduled"
+    competition: "Indonesian Super League",
+    country: "Indonesia",
+    homeTeam: "Borneo Samarinda",
+    awayTeam: "Persita Tangerang",
+    startsAt: "2026-05-05T12:00:00Z",
+    status: "live",
+    homeScore: 2,
+    awayScore: 0,
+    source: "demo"
   },
   {
     id: "m-2",
-    competition: "Primeira Liga",
-    homeTeam: "Benfica",
-    awayTeam: "Braga",
-    startsAt: "2026-05-06T18:00:00+01:00",
-    status: "scheduled"
+    competition: "Indonesian Super League",
+    country: "Indonesia",
+    homeTeam: "Madura United",
+    awayTeam: "Bali United",
+    startsAt: "2026-05-05T08:30:00Z",
+    status: "live",
+    homeScore: 2,
+    awayScore: 0,
+    source: "demo"
   },
   {
     id: "m-3",
-    competition: "Primeira Liga",
-    homeTeam: "Vitoria SC",
-    awayTeam: "Boavista",
-    startsAt: "2026-05-06T20:30:00+01:00",
-    status: "scheduled"
-  },
-  {
-    id: "m-4",
-    competition: "Primeira Liga",
-    homeTeam: "Famalicao",
-    awayTeam: "Casa Pia",
-    startsAt: "2026-05-04T20:15:00+01:00",
-    status: "finished",
-    homeScore: 2,
-    awayScore: 1
+    competition: "Austrian Regionalliga Ost",
+    country: "Austria",
+    homeTeam: "Wiener SC",
+    awayTeam: "Parndorf",
+    startsAt: "2026-05-05T17:30:00Z",
+    status: "scheduled",
+    source: "demo"
   }
 ];
 
@@ -50,11 +50,11 @@ export const initialPicks: Pick[] = [
     matchId: "m-1",
     userId: "u-xico",
     marketType: "1X2",
-    selection: "Sporting vence",
+    selection: "Borneo Samarinda vence",
     odds: 2.1,
     stake: 1,
     bookmaker: "Betano",
-    reason: "Sporting em casa, intensidade alta e Porto com baixas no meio-campo.",
+    reason: "Equipa da casa forte, vantagem no ritmo e bom controlo do jogo.",
     status: "pending",
     profit: 0,
     createdAt: "2026-05-05T09:25:00+01:00"
@@ -75,10 +75,10 @@ export const initialPicks: Pick[] = [
   },
   {
     id: "p-3",
-    matchId: "m-4",
+    matchId: "m-1",
     userId: "u-grilo",
     marketType: "1X2",
-    selection: "Famalicao vence",
+    selection: "Borneo Samarinda vence",
     odds: 2.35,
     stake: 1,
     bookmaker: "Manual",

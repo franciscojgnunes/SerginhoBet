@@ -1,6 +1,17 @@
 export type MatchStatus = "scheduled" | "live" | "finished";
 
-export type MarketType = "1X2" | "Over/Under" | "BTTS" | "Handicap" | "Outro";
+export type MarketType =
+  | "1X2"
+  | "Dupla chance"
+  | "Over/Under"
+  | "BTTS"
+  | "Handicap"
+  | "Resultado correto"
+  | "Intervalo/Final"
+  | "Marcador"
+  | "Cartoes"
+  | "Cantos"
+  | "Outro";
 
 export type PickStatus = "pending" | "won" | "lost" | "void" | "half_won" | "half_lost";
 
@@ -16,12 +27,14 @@ export type User = {
 export type Match = {
   id: string;
   competition: string;
+  country?: string;
   homeTeam: string;
   awayTeam: string;
   startsAt: string;
   status: MatchStatus;
   homeScore?: number;
   awayScore?: number;
+  source?: "api" | "demo";
 };
 
 export type Pick = {
