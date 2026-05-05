@@ -21,10 +21,10 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { fallbackMatches, users } from "./data";
 import {
-  calculateDailyStats,
-  calculateBankroll,
-  calculateProfit,
   buildProfitTimeline,
+  calculateBankroll,
+  calculateDailyStats,
+  calculateProfit,
   scorePick,
   selectSlipPicks
 } from "./domain";
@@ -62,6 +62,8 @@ const marketPlaceholders: Record<MarketType, string> = {
   Cantos: "Mais de 8.5 cantos",
   Outro: "Escreve o mercado"
 };
+
+type Page = "games" | "community" | "stats";
 
 function formatKickoff(value: string) {
   return new Intl.DateTimeFormat("pt-PT", {
@@ -103,8 +105,13 @@ function Avatar({ user }: { user: User }) {
   );
 }
 
+function TeamLogo({ src, name }: { src?: string; name: string }) {
+  if (src) return <img className="team-logo" src={src} alt={`Emblema ${name}`} loading="lazy" />;
+  return <span className="team-logo fallback">{name.slice(0, 2).toUpperCase()}</span>;
+}
+
 export function App() {
-  const [activeUserId, setActiveUserId] = useState("u-xico");
+  const [activeUserId, setActiveUserId] = useState("u-serginho");
   const [matches, setMatches] = useState<Match[]>(fallbackMatches);
   const [selectedMatchId, setSelectedMatchId] = useState("");
   const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty" | "fallback">("loading");
@@ -115,7 +122,7 @@ export function App() {
     pickIds: [],
     generatedAt: currentDate.toISOString()
   });
-  const [activePage, setActivePage] = useState<"tips" | "stats">("tips");
+  const [activePage, setActivePage] = useState<Page>("games");
   const [formState, setFormState] = useState({
     marketType: "1X2" as MarketType,
     selection: "",
@@ -134,26 +141,18 @@ export function App() {
     try {
       const todayMatches = await fetchTodayMatches(currentDate);
       setMatches(todayMatches);
-      setSelectedMatchId(todayMatches[0]?.id ?? "");
+      setSelectedMatchId(todayMatches.find((match) => match.status !== "finished")?.id ?? "");
       setMatchSync(todayMatches.length > 0 ? "live" : "empty");
-      setPicks(createStarterPicks(todayMatches));
+      setPicks(createStarterPicks(todayMatches.filter((match) => match.status !== "finished")));
       setVotes([]);
-      setDailySlip({
-        status: "draft",
-        pickIds: [],
-        generatedAt: new Date().toISOString()
-      });
+      setDailySlip({ status: "draft", pickIds: [], generatedAt: new Date().toISOString() });
     } catch {
       setMatches(fallbackMatches);
-      setSelectedMatchId(fallbackMatches[0]?.id ?? "");
+      setSelectedMatchId("");
       setMatchSync("fallback");
       setPicks([]);
       setVotes([]);
-      setDailySlip({
-        status: "draft",
-        pickIds: [],
-        generatedAt: new Date().toISOString()
-      });
+      setDailySlip({ status: "draft", pickIds: [], generatedAt: new Date().toISOString() });
     }
   }
 
@@ -161,9 +160,9 @@ export function App() {
   const isStreamer = activeUser.role === "streamer";
   const openMatches = matches.filter((match) => match.status !== "finished");
   const selectedMatch = openMatches.find((match) => match.id === selectedMatchId) ?? openMatches[0];
-  const pendingPicks = picks.filter((pick) => pick.status === "pending");
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
-
+  const communityPicks = [...picks].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const pendingPicks = picks.filter((pick) => pick.status === "pending");
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
     .filter((pick): pick is Pick => Boolean(pick));
@@ -174,7 +173,7 @@ export function App() {
   const suggestedPicks = selectSlipPicks(picks, votes, 8);
   const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
 
-  const stats = useMemo(() => {
+  const leaderboard = useMemo(() => {
     return users
       .map((user) => {
         const settled = picks.filter((pick) => pick.userId === user.id && pick.status !== "pending");
@@ -214,14 +213,8 @@ export function App() {
     };
 
     setPicks((current) => [nextPick, ...current]);
-    setFormState({
-      marketType: "1X2",
-      selection: "",
-      odds: "2.00",
-      stake: "1",
-      bookmaker: "Manual",
-      reason: ""
-    });
+    setActivePage("community");
+    setFormState({ marketType: "1X2", selection: "", odds: "2.00", stake: "1", bookmaker: "Manual", reason: "" });
   }
 
   function castVote(pickId: string, type: VoteType) {
@@ -235,13 +228,7 @@ export function App() {
   }
 
   function generateSlip() {
-    const bestPickIds = selectSlipPicks(picks, votes, 4).map((pick) => pick.id);
-
-    setDailySlip({
-      status: "draft",
-      pickIds: bestPickIds,
-      generatedAt: new Date().toISOString()
-    });
+    setDailySlip({ status: "draft", pickIds: selectSlipPicks(picks, votes, 4).map((pick) => pick.id), generatedAt: new Date().toISOString() });
   }
 
   function publishSlip() {
@@ -252,25 +239,68 @@ export function App() {
   function toggleFinalPick(pickId: string) {
     setDailySlip((slip) => {
       const exists = slip.pickIds.includes(pickId);
-      return {
-        ...slip,
-        status: "draft",
-        pickIds: exists ? slip.pickIds.filter((id) => id !== pickId) : [...slip.pickIds, pickId]
-      };
+      return { ...slip, status: "draft", pickIds: exists ? slip.pickIds.filter((id) => id !== pickId) : [...slip.pickIds, pickId] };
     });
   }
 
   function settlePick(pickId: string, status: PickStatus) {
     setPicks((current) =>
       current.map((pick) =>
-        pick.id === pickId
-          ? {
-              ...pick,
-              status,
-              profit: calculateProfit(status, pick.stake, pick.odds)
-            }
-          : pick
+        pick.id === pickId ? { ...pick, status, profit: calculateProfit(status, pick.stake, pick.odds) } : pick
       )
+    );
+  }
+
+  function renderPickCard(pick: Pick) {
+    const author = userById(pick.userId);
+    const match = matches.find((item) => item.id === pick.matchId);
+    const score = scorePick(pick.id, votes);
+    const selected = dailySlip.pickIds.includes(pick.id);
+
+    return (
+      <article className={`pick-card ${selected ? "final" : ""}`} key={pick.id}>
+        <div className="pick-header">
+          <div className="author">
+            <Avatar user={author} />
+            <div>
+              <strong>{author.displayName}</strong>
+              <span>{pick.marketType}</span>
+            </div>
+          </div>
+          <div className={`status ${pick.status}`}>{selected ? "Final" : statusLabel(pick.status)}</div>
+        </div>
+        <div className="pick-body">
+          <h4>{pick.selection}</h4>
+          <p>{pick.reason}</p>
+        </div>
+        <div className="pick-meta">
+          <span>@{pick.odds.toFixed(2)}</span>
+          <span>{pick.stake}u</span>
+          <span>{pick.bookmaker}</span>
+          <span>Score {score}</span>
+          {match ? <span>{match.homeTeam} vs {match.awayTeam}</span> : null}
+        </div>
+        <div className="vote-row">
+          <button onClick={() => castVote(pick.id, "trust")} disabled={pick.userId === activeUserId}>
+            <ThumbsUp size={16} />
+            Confio
+          </button>
+          <button onClick={() => castVote(pick.id, "doubt")} disabled={pick.userId === activeUserId}>
+            <ThumbsDown size={16} />
+            Não confio
+          </button>
+          <button onClick={() => castVote(pick.id, "strong")} disabled={pick.userId === activeUserId}>
+            <Flame size={16} />
+            Forte
+          </button>
+          {isStreamer ? (
+            <button className="streamer-action" onClick={() => toggleFinalPick(pick.id)}>
+              <ShieldCheck size={16} />
+              {selected ? "Remover final" : "Escolher final"}
+            </button>
+          ) : null}
+        </div>
+      </article>
     );
   }
 
@@ -283,63 +313,50 @@ export function App() {
           </div>
           <div>
             <h1>PickRoom SerginhoEsteves</h1>
-            <p>Comunidade Twitch, picks de futebol e banca ficticia coletiva</p>
+            <p>Tips de futebol por dia, comunidade Twitch e banca fictícia coletiva</p>
           </div>
         </div>
 
         <div className="login-panel">
           <div className="page-tabs">
-            <button className={activePage === "tips" ? "active" : ""} onClick={() => setActivePage("tips")}>
-              Tips
-            </button>
-            <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>
-              Estatísticas
-            </button>
+            <button className={activePage === "games" ? "active" : ""} onClick={() => setActivePage("games")}>Jogos</button>
+            <button className={activePage === "community" ? "active" : ""} onClick={() => setActivePage("community")}>Comunidade</button>
+            <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
           </div>
           <LogIn size={18} />
           <select value={activeUserId} onChange={(event) => setActiveUserId(event.target.value)}>
             {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.displayName}
-              </option>
+              <option key={user.id} value={user.id}>{user.displayName}</option>
             ))}
           </select>
           <span className="role-pill">{activeUser.role}</span>
         </div>
       </header>
 
-      <section className="hero-grid">
+      <section className="hero-grid compact">
         <div className="hero-copy">
           <div className={`sync-chip ${matchSync}`}>
             <RefreshCw size={15} />
             {matchSync === "loading" ? "A sincronizar jogos de hoje" : null}
-            {matchSync === "live" ? "Tips de hoje via ESPN + TheSportsDB" : null}
+            {matchSync === "live" ? "Jogos de hoje via ESPN + TheSportsDB" : null}
             {matchSync === "empty" ? "Sem jogos reais encontrados para hoje" : null}
-            {matchSync === "fallback" ? "APIs indisponiveis" : null}
+            {matchSync === "fallback" ? "APIs indisponíveis" : null}
           </div>
-          <h2>O boletim nasce da votacao da stream.</h2>
+          <h2>Escolhe o jogo, cria a tip, deixa a stream votar.</h2>
           <p>
-            So entram jogos do dia. A comunidade sugere e vota nas melhores tips, mas o SerginhoEsteves escolhe
-            as picks finais para a banca ficticia coletiva.
+            Os jogos terminados ficam fora. O SerginhoEsteves também pode lançar tips e escolhe as finais para a banca coletiva.
           </p>
           <div className="hero-actions">
+            <button onClick={() => setActivePage("games")}>
+              <Eye size={18} />
+              Abrir jogos de hoje
+            </button>
             {isStreamer ? (
-              <>
-                <button onClick={generateSlip}>
-                  <Sparkles size={18} />
-                  Sugerir por votos
-                </button>
-                <button className="secondary" onClick={publishSlip}>
-                  <CheckCircle2 size={18} />
-                  Publicar escolhas do streamer
-                </button>
-              </>
-            ) : (
-              <button>
-                <Eye size={18} />
-                Ver picks do dia
+              <button className="secondary" onClick={publishSlip}>
+                <CheckCircle2 size={18} />
+                Publicar finais
               </button>
-            )}
+            ) : null}
             <button className="ghost" onClick={syncTodayMatches}>
               <RefreshCw size={18} />
               Atualizar jogos
@@ -363,430 +380,325 @@ export function App() {
       </section>
 
       <section className="metric-strip">
-        <div>
-          <CalendarDays size={18} />
-          <span>{openMatches.length}</span>
-          <p>Jogos hoje</p>
-        </div>
-        <div>
-          <Vote size={18} />
-          <span>{pendingPicks.length}</span>
-          <p>Picks em votacao</p>
-        </div>
-        <div>
-          <ShieldCheck size={18} />
-          <span>{topSlipPicks.length}</span>
-          <p>Escolhidas pelo streamer</p>
-        </div>
-        <div>
-          <CircleDollarSign size={18} />
-          <span>{topSlipPicks.length ? combinedOdds.toFixed(2) : "0.00"}</span>
-          <p>Odd combinada</p>
-        </div>
+        <div><CalendarDays size={18} /><span>{openMatches.length}</span><p>Jogos abertos hoje</p></div>
+        <div><Vote size={18} /><span>{pendingPicks.length}</span><p>Tips em votação</p></div>
+        <div><ShieldCheck size={18} /><span>{topSlipPicks.length}</span><p>Finais do streamer</p></div>
+        <div><CircleDollarSign size={18} /><span>{topSlipPicks.length ? combinedOdds.toFixed(2) : "0.00"}</span><p>Odd combinada</p></div>
       </section>
+
+      {activePage === "games" ? (
+        <section className="games-page">
+          <section className="panel games-center">
+            <div className="section-title spread">
+              <div><CalendarDays size={18} /><h3>Jogos de hoje</h3></div>
+              <span>{matchSync === "live" ? "API" : "Sem demo"}</span>
+            </div>
+            <div className="games-grid">
+              {openMatches.map((match) => (
+                <button
+                  className={`game-card ${match.id === selectedMatch?.id ? "selected" : ""}`}
+                  key={match.id}
+                  onClick={() => setSelectedMatchId(match.id)}
+                >
+                  <span className="game-competition">{match.competition}</span>
+                  <div className="teams-line">
+                    <div className="team-side"><TeamLogo src={match.homeLogoUrl} name={match.homeTeam} /><strong>{match.homeTeam}</strong></div>
+                    <span className="versus">vs</span>
+                    <div className="team-side away"><TeamLogo src={match.awayLogoUrl} name={match.awayTeam} /><strong>{match.awayTeam}</strong></div>
+                  </div>
+                  <small>
+                    {formatKickoff(match.startsAt)} · {matchStatusLabel(match)}
+                    {match.homeScore !== undefined && match.awayScore !== undefined ? ` · ${match.homeScore}-${match.awayScore}` : ""}
+                  </small>
+                </button>
+              ))}
+            </div>
+            {openMatches.length === 0 ? (
+              <p className="empty-copy">Não há jogos por terminar para hoje. Assim que a API tiver jogos abertos, aparecem aqui.</p>
+            ) : null}
+          </section>
+
+          <section className="panel match-detail">
+            {selectedMatch ? (
+              <>
+                <div className="detail-scoreboard">
+                  <div><TeamLogo src={selectedMatch.homeLogoUrl} name={selectedMatch.homeTeam} /><strong>{selectedMatch.homeTeam}</strong></div>
+                  <span>vs</span>
+                  <div><TeamLogo src={selectedMatch.awayLogoUrl} name={selectedMatch.awayTeam} /><strong>{selectedMatch.awayTeam}</strong></div>
+                </div>
+                <div className="detail-facts">
+                  <span>Competição <b>{selectedMatch.competition}</b></span>
+                  <span>Hora <b>{formatKickoff(selectedMatch.startsAt)}</b></span>
+                  <span>Local <b>{selectedMatch.venue ?? "Sem estádio na API"}</b></span>
+                  <span>Forma casa <b>{selectedMatch.homeRecord ?? "Sem histórico"}</b></span>
+                  <span>Forma fora <b>{selectedMatch.awayRecord ?? "Sem histórico"}</b></span>
+                  <span>Tips neste jogo <b>{selectedMatchPicks.length}</b></span>
+                </div>
+                <TipForm
+                  formState={formState}
+                  selectedMatch={selectedMatch}
+                  activeUser={activeUser}
+                  onSubmit={submitPick}
+                  onChange={setFormState}
+                />
+                <div className="mini-picks">
+                  {selectedMatchPicks.slice(0, 3).map(renderPickCard)}
+                  {selectedMatchPicks.length === 0 ? <p className="empty-copy">Abre este jogo e lança a primeira tip da comunidade.</p> : null}
+                </div>
+              </>
+            ) : (
+              <p className="empty-copy">Seleciona um jogo de hoje para abrir os detalhes e criar uma tip.</p>
+            )}
+          </section>
+        </section>
+      ) : null}
+
+      {activePage === "community" ? (
+        <section className="community-page">
+          <section className="panel community-feed">
+            <div className="section-title spread">
+              <div><Vote size={18} /><h3>Tips da comunidade</h3></div>
+              <span>{communityPicks.length} tips</span>
+            </div>
+            <div className="pick-stack">
+              {communityPicks.map(renderPickCard)}
+              {communityPicks.length === 0 ? <p className="empty-copy">Ainda não existem tips. Vai à aba Jogos, abre um jogo e cria a primeira.</p> : null}
+            </div>
+          </section>
+
+          <aside className="side-column">
+            {isStreamer ? (
+              <section className="panel streamer-control">
+                <div className="section-title spread">
+                  <div><Sparkles size={18} /><h3>Painel streamer</h3></div>
+                  <span>{dailySlip.pickIds.length} finais</span>
+                </div>
+                <div className="control-actions">
+                  <button onClick={generateSlip}><Sparkles size={16} />Preencher por votos</button>
+                  <button className="secondary" onClick={publishSlip}><CheckCircle2 size={16} />Publicar finais</button>
+                </div>
+                <div className="candidate-list">
+                  {suggestedPicks.map((pick) => {
+                    const match = matches.find((item) => item.id === pick.matchId);
+                    const author = userById(pick.userId);
+                    const selected = dailySlip.pickIds.includes(pick.id);
+                    return (
+                      <div className={`candidate-row ${selected ? "selected" : ""}`} key={pick.id}>
+                        <div>
+                          <strong>{pick.selection}</strong>
+                          <small>{author.displayName} · {match?.homeTeam} vs {match?.awayTeam} · Score {scorePick(pick.id, votes)}</small>
+                        </div>
+                        <button onClick={() => toggleFinalPick(pick.id)}>{selected ? "Remover" : "Escolher"}</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+            <SlipPanel picks={topSlipPicks} matches={matches} combinedOdds={combinedOdds} status={dailySlip.status} />
+            <BankPanel bankroll={communityBankroll} />
+            {isStreamer ? <AdminPanel pendingPicks={pendingPicks} onSettle={settlePick} /> : null}
+          </aside>
+        </section>
+      ) : null}
 
       {activePage === "stats" ? (
-        <section className="stats-page">
-          <section className="panel stats-hero-panel">
-            <div className="section-title">
-              <LineChart size={18} />
-              <h3>Estatísticas do dia</h3>
-            </div>
-            <div className="stat-grid wide">
-              <span>Tips submetidas <b>{dailyStats.total.submitted}</b></span>
-              <span>Finais do streamer <b>{dailyStats.total.selected}</b></span>
-              <span>Lucro total <b>{dailyStats.total.profit >= 0 ? "+" : ""}{dailyStats.total.profit.toFixed(2)}u</b></span>
-              <span>ROI <b>{dailyStats.total.roi.toFixed(1)}%</b></span>
-            </div>
-            <ProfitChart points={profitTimeline} />
-          </section>
-
-          <section className="panel stats-table-panel">
-            <div className="section-title">
-              <Trophy size={18} />
-              <h3>Performance por viewer</h3>
-            </div>
-            <div className="stats-table">
-              <div className="stats-table-head">
-                <span>Viewer</span>
-                <span>Tips</span>
-                <span>Finais</span>
-                <span>Resolvidas</span>
-                <span>Stake</span>
-                <span>Lucro</span>
-                <span>ROI</span>
-              </div>
-              {users
-                .filter((user) => user.role !== "streamer")
-                .map((user) => {
-                  const row =
-                    dailyStats.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
-                      submitted: 0,
-                      selected: 0,
-                      settled: 0,
-                      pendingSelected: 0,
-                      staked: 0,
-                      profit: 0,
-                      roi: 0
-                    };
-                  return (
-                    <div className="stats-table-row" key={user.id}>
-                      <span className="viewer-cell"><Avatar user={user} /> {user.displayName}</span>
-                      <span>{row.submitted}</span>
-                      <span>{row.selected}</span>
-                      <span>{row.settled}</span>
-                      <span>{row.staked.toFixed(2)}u</span>
-                      <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
-                      <span>{row.roi.toFixed(1)}%</span>
-                    </div>
-                  );
-                })}
-            </div>
-          </section>
-        </section>
-      ) : (
-      <section className="workspace">
-        <aside className="panel match-list">
-          <div className="section-title spread">
-            <div>
-              <CalendarDays size={18} />
-              <h3>Jogos de hoje</h3>
-            </div>
-            <span>{matchSync === "live" ? "API" : "Sem demo"}</span>
-          </div>
-          {openMatches.map((match) => (
-            <button
-              className={`match-row ${match.id === selectedMatch.id ? "selected" : ""}`}
-              key={match.id}
-              onClick={() => setSelectedMatchId(match.id)}
-            >
-              <span>{match.competition}</span>
-              <strong>
-                {match.homeTeam} vs {match.awayTeam}
-              </strong>
-              <small>
-                {formatKickoff(match.startsAt)} · {matchStatusLabel(match)}
-                {match.homeScore !== undefined && match.awayScore !== undefined ? ` · ${match.homeScore}-${match.awayScore}` : ""}
-              </small>
-            </button>
-          ))}
-          {openMatches.length === 0 ? (
-            <p className="empty-copy">Nao ha jogos por terminar para este dia. Os terminados ficam fora da área de tips.</p>
-          ) : null}
-        </aside>
-
-        <section className="panel picks-panel">
-          <div className="section-title spread">
-            <div>
-              <Vote size={18} />
-              <h3>{selectedMatch ? `${selectedMatch.homeTeam} vs ${selectedMatch.awayTeam}` : "Sem jogo selecionado"}</h3>
-            </div>
-            <span>{selectedMatchPicks.length} picks</span>
-          </div>
-
-          {isStreamer ? (
-            <section className="streamer-control">
-              <div className="section-title spread">
-                <div>
-                  <Sparkles size={18} />
-                  <h3>Painel streamer</h3>
-                </div>
-                <span>{dailySlip.pickIds.length} finais</span>
-              </div>
-              <div className="control-actions">
-                <button onClick={generateSlip}>
-                  <Sparkles size={16} />
-                  Preencher por votos
-                </button>
-                <button className="secondary" onClick={publishSlip}>
-                  <CheckCircle2 size={16} />
-                  Publicar finais
-                </button>
-              </div>
-              <div className="candidate-list">
-                {suggestedPicks.map((pick) => {
-                  const match = matches.find((item) => item.id === pick.matchId);
-                  const author = userById(pick.userId);
-                  const selected = dailySlip.pickIds.includes(pick.id);
-                  return (
-                    <div className={`candidate-row ${selected ? "selected" : ""}`} key={pick.id}>
-                      <div>
-                        <strong>{pick.selection}</strong>
-                        <small>
-                          {author.displayName} · {match?.homeTeam} vs {match?.awayTeam} · Score {scorePick(pick.id, votes)}
-                        </small>
-                      </div>
-                      <button onClick={() => toggleFinalPick(pick.id)}>{selected ? "Remover" : "Escolher"}</button>
-                    </div>
-                  );
-                })}
-                {suggestedPicks.length === 0 ? <p className="empty-copy">Ainda não há picks da comunidade para escolher.</p> : null}
-              </div>
-            </section>
-          ) : (
-            <section className="viewer-control">
-              <div className="section-title">
-                <Vote size={18} />
-                <h3>Painel viewer</h3>
-              </div>
-              <form className="pick-form" onSubmit={submitPick}>
-                <label>
-                  Mercado
-                  <select
-                    value={formState.marketType}
-                    onChange={(event) =>
-                      setFormState((state) => ({
-                        ...state,
-                        marketType: event.target.value as MarketType,
-                        selection: ""
-                      }))
-                    }
-                  >
-                    {marketOptions.map((market) => (
-                      <option key={market}>{market}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="selection-field">
-                  Pick
-                  <input
-                    placeholder={marketPlaceholders[formState.marketType]}
-                    value={formState.selection}
-                    onChange={(event) => setFormState((state) => ({ ...state, selection: event.target.value }))}
-                  />
-                </label>
-                <label>
-                  Odd
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="1.01"
-                    value={formState.odds}
-                    onChange={(event) => setFormState((state) => ({ ...state, odds: event.target.value }))}
-                  />
-                </label>
-                <label>
-                  Stake
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0.5"
-                    value={formState.stake}
-                    onChange={(event) => setFormState((state) => ({ ...state, stake: event.target.value }))}
-                  />
-                </label>
-                <label>
-                  Fonte
-                  <input
-                    placeholder="Bookmaker"
-                    value={formState.bookmaker}
-                    onChange={(event) => setFormState((state) => ({ ...state, bookmaker: event.target.value }))}
-                  />
-                </label>
-                <label className="reason-field">
-                  Argumento
-                  <textarea
-                    placeholder="Porque e que a comunidade deve confiar nesta pick?"
-                    value={formState.reason}
-                    onChange={(event) => setFormState((state) => ({ ...state, reason: event.target.value }))}
-                  />
-                </label>
-                <button type="submit" disabled={!selectedMatch}>Submeter pick</button>
-              </form>
-            </section>
-          )}
-
-          <div className="pick-stack">
-            {selectedMatchPicks.map((pick) => {
-              const author = userById(pick.userId);
-              const score = scorePick(pick.id, votes);
-              return (
-                <article className="pick-card" key={pick.id}>
-                  <div className="pick-header">
-                    <div className="author">
-                      <Avatar user={author} />
-                      <div>
-                        <strong>{author.displayName}</strong>
-                        <span>{pick.marketType}</span>
-                      </div>
-                    </div>
-                    <div className={`status ${pick.status}`}>{statusLabel(pick.status)}</div>
-                  </div>
-                  <div className="pick-body">
-                    <h4>{pick.selection}</h4>
-                    <p>{pick.reason}</p>
-                  </div>
-                  <div className="pick-meta">
-                    <span>@{pick.odds.toFixed(2)}</span>
-                    <span>{pick.stake}u</span>
-                    <span>{pick.bookmaker}</span>
-                    <span>Score {score}</span>
-                  </div>
-                  <div className="vote-row">
-                    <button onClick={() => castVote(pick.id, "trust")} disabled={pick.userId === activeUserId}>
-                      <ThumbsUp size={16} />
-                      Confio
-                    </button>
-                    <button onClick={() => castVote(pick.id, "doubt")} disabled={pick.userId === activeUserId}>
-                      <ThumbsDown size={16} />
-                      Nao confio
-                    </button>
-                    <button onClick={() => castVote(pick.id, "strong")} disabled={pick.userId === activeUserId}>
-                      <Flame size={16} />
-                      Forte
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <aside className="side-column">
-          <section className="panel slip-panel">
-            <div className="section-title spread">
-              <div>
-                <ShieldCheck size={18} />
-                <h3>Picks finais do streamer</h3>
-              </div>
-              <span className={`slip-state ${dailySlip.status}`}>{dailySlip.status}</span>
-            </div>
-            <div className="slip-list">
-              {topSlipPicks.map((pick, index) => {
-                const match = matches.find((item) => item.id === pick.matchId);
-                return (
-                  <div className="slip-item" key={pick.id}>
-                    <span>{index + 1}</span>
-                    <div>
-                      <strong>{pick.selection}</strong>
-                      <small>
-                        {match?.homeTeam} vs {match?.awayTeam} · @{pick.odds.toFixed(2)} · {pick.stake}u
-                      </small>
-                    </div>
-                  </div>
-                );
-              })}
-              {topSlipPicks.length === 0 ? (
-                <p className="empty-copy">Usa os votos como sugestao; o streamer publica as picks finais.</p>
-              ) : null}
-            </div>
-            <div className="combined-odds">
-              <span>Odd combinada</span>
-              <strong>{topSlipPicks.length ? combinedOdds.toFixed(2) : "0.00"}</strong>
-            </div>
-          </section>
-
-          <section className="panel bank-mini">
-            <div className="section-title">
-              <Gauge size={18} />
-              <h3>Estado da banca</h3>
-            </div>
-            <div className="bank-line">
-              <span>Disponivel</span>
-              <strong>{(communityBankroll.current - communityBankroll.exposure).toFixed(2)}u</strong>
-            </div>
-            <div className="bank-line">
-              <span>Exposicao boletim</span>
-              <strong>{communityBankroll.exposure.toFixed(2)}u</strong>
-            </div>
-            <div className="bank-line">
-              <span>Lucro fechado</span>
-              <strong>{communityBankroll.settledProfit >= 0 ? "+" : ""}{communityBankroll.settledProfit.toFixed(2)}u</strong>
-            </div>
-          </section>
-
-          <section className="panel stats-panel">
-            <div className="section-title">
-              <CircleDollarSign size={18} />
-              <h3>Estatísticas do dia</h3>
-            </div>
-            <div className="stat-grid">
-              <span>Submetidas <b>{dailyStats.total.submitted}</b></span>
-              <span>Finais <b>{dailyStats.total.selected}</b></span>
-              <span>Lucro total <b>{dailyStats.total.profit >= 0 ? "+" : ""}{dailyStats.total.profit.toFixed(2)}u</b></span>
-              <span>ROI <b>{dailyStats.total.roi.toFixed(1)}%</b></span>
-            </div>
-            <div className="viewer-stats">
-              {users
-                .filter((user) => user.role !== "streamer")
-                .map((user) => {
-                  const row =
-                    dailyStats.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
-                      submitted: 0,
-                      selected: 0,
-                      settled: 0,
-                      pendingSelected: 0,
-                      staked: 0,
-                      profit: 0,
-                      roi: 0
-                    };
-                  return (
-                    <div className="viewer-stat-row" key={user.id}>
-                      <Avatar user={user} />
-                      <strong>{user.displayName}</strong>
-                      <small>{row.submitted} tips · {row.selected} finais</small>
-                      <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
-                    </div>
-                  );
-                })}
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="section-title">
-              <Trophy size={18} />
-              <h3>Leaderboard</h3>
-            </div>
-            <div className="leaderboard">
-              {stats.map((row, index) => (
-                <div className="leader-row" key={row.user.id}>
-                  <span>{index + 1}</span>
-                  <Avatar user={row.user} />
-                  <strong>{row.user.displayName}</strong>
-                  <small>{row.picks} picks</small>
-                  <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {isStreamer ? (
-            <section className="panel admin-panel">
-              <div className="section-title">
-                <Activity size={18} />
-                <h3>Resolver picks</h3>
-              </div>
-              {pendingPicks.slice(0, 8).map((pick) => (
-                <div className="settle-row" key={pick.id}>
-                  <span>{pick.selection}</span>
-                  <select onChange={(event) => settlePick(pick.id, event.target.value as PickStatus)} defaultValue="pending">
-                    <option value="pending">Pendente</option>
-                    <option value="won">Ganha</option>
-                    <option value="lost">Perdida</option>
-                    <option value="void">Void</option>
-                    <option value="half_won">Meia ganha</option>
-                    <option value="half_lost">Meia perdida</option>
-                  </select>
-                </div>
-              ))}
-            </section>
-          ) : null}
-        </aside>
-      </section>
-      )}
+        <StatsPage dailyStats={dailyStats} profitTimeline={profitTimeline} leaderboard={leaderboard} />
+      ) : null}
 
       <footer className="disclaimer">
         <UserRound size={16} />
-        Unidades ficticias. Sem dinheiro real, depositos, cashout ou execucao de apostas.
+        Unidades fictícias. Sem dinheiro real, depósitos, cashout ou execução de apostas.
       </footer>
     </main>
   );
 }
 
+function TipForm({
+  formState,
+  selectedMatch,
+  activeUser,
+  onSubmit,
+  onChange
+}: {
+  formState: { marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string };
+  selectedMatch?: Match;
+  activeUser: User;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onChange: React.Dispatch<React.SetStateAction<{ marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string }>>;
+}) {
+  return (
+    <section className="viewer-control">
+      <div className="section-title">
+        <Vote size={18} />
+        <h3>Criar tip como {activeUser.displayName}</h3>
+      </div>
+      <form className="pick-form" onSubmit={onSubmit}>
+        <label>
+          Mercado
+          <select value={formState.marketType} onChange={(event) => onChange((state) => ({ ...state, marketType: event.target.value as MarketType, selection: "" }))}>
+            {marketOptions.map((market) => <option key={market}>{market}</option>)}
+          </select>
+        </label>
+        <label className="selection-field">
+          Pick
+          <input placeholder={marketPlaceholders[formState.marketType]} value={formState.selection} onChange={(event) => onChange((state) => ({ ...state, selection: event.target.value }))} />
+        </label>
+        <label>
+          Odd
+          <input type="number" step="0.01" min="1.01" value={formState.odds} onChange={(event) => onChange((state) => ({ ...state, odds: event.target.value }))} />
+        </label>
+        <label>
+          Stake
+          <input type="number" step="0.5" min="0.5" value={formState.stake} onChange={(event) => onChange((state) => ({ ...state, stake: event.target.value }))} />
+        </label>
+        <label>
+          Fonte
+          <input placeholder="Bookmaker" value={formState.bookmaker} onChange={(event) => onChange((state) => ({ ...state, bookmaker: event.target.value }))} />
+        </label>
+        <label className="reason-field">
+          Argumento
+          <textarea placeholder="Porque é que a comunidade deve confiar nesta pick?" value={formState.reason} onChange={(event) => onChange((state) => ({ ...state, reason: event.target.value }))} />
+        </label>
+        <button type="submit" disabled={!selectedMatch}>Submeter tip</button>
+      </form>
+    </section>
+  );
+}
+
+function SlipPanel({ picks, matches, combinedOdds, status }: { picks: Pick[]; matches: Match[]; combinedOdds: number; status: DailySlip["status"] }) {
+  return (
+    <section className="panel slip-panel">
+      <div className="section-title spread">
+        <div><ShieldCheck size={18} /><h3>Picks finais do streamer</h3></div>
+        <span className={`slip-state ${status}`}>{status}</span>
+      </div>
+      <div className="slip-list">
+        {picks.map((pick, index) => {
+          const match = matches.find((item) => item.id === pick.matchId);
+          return (
+            <div className="slip-item" key={pick.id}>
+              <span>{index + 1}</span>
+              <div>
+                <strong>{pick.selection}</strong>
+                <small>{match?.homeTeam} vs {match?.awayTeam} · @{pick.odds.toFixed(2)} · {pick.stake}u</small>
+              </div>
+            </div>
+          );
+        })}
+        {picks.length === 0 ? <p className="empty-copy">O streamer escolhe aqui as tips finais a partir dos votos.</p> : null}
+      </div>
+      <div className="combined-odds">
+        <span>Odd combinada</span>
+        <strong>{picks.length ? combinedOdds.toFixed(2) : "0.00"}</strong>
+      </div>
+    </section>
+  );
+}
+
+function BankPanel({ bankroll }: { bankroll: ReturnType<typeof calculateBankroll> }) {
+  return (
+    <section className="panel bank-mini">
+      <div className="section-title"><Gauge size={18} /><h3>Estado da banca</h3></div>
+      <div className="bank-line"><span>Disponível</span><strong>{(bankroll.current - bankroll.exposure).toFixed(2)}u</strong></div>
+      <div className="bank-line"><span>Exposição boletim</span><strong>{bankroll.exposure.toFixed(2)}u</strong></div>
+      <div className="bank-line"><span>Lucro fechado</span><strong>{bankroll.settledProfit >= 0 ? "+" : ""}{bankroll.settledProfit.toFixed(2)}u</strong></div>
+    </section>
+  );
+}
+
+function AdminPanel({ pendingPicks, onSettle }: { pendingPicks: Pick[]; onSettle: (pickId: string, status: PickStatus) => void }) {
+  return (
+    <section className="panel admin-panel">
+      <div className="section-title"><Activity size={18} /><h3>Resolver tips</h3></div>
+      {pendingPicks.slice(0, 8).map((pick) => (
+        <div className="settle-row" key={pick.id}>
+          <span>{pick.selection}</span>
+          <select onChange={(event) => onSettle(pick.id, event.target.value as PickStatus)} defaultValue="pending">
+            <option value="pending">Pendente</option>
+            <option value="won">Ganha</option>
+            <option value="lost">Perdida</option>
+            <option value="void">Void</option>
+            <option value="half_won">Meia ganha</option>
+            <option value="half_lost">Meia perdida</option>
+          </select>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function StatsPage({
+  dailyStats,
+  profitTimeline,
+  leaderboard
+}: {
+  dailyStats: ReturnType<typeof calculateDailyStats>;
+  profitTimeline: Array<{ label: string; profit: number; cumulative: number }>;
+  leaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
+}) {
+  return (
+    <section className="stats-page">
+      <section className="panel stats-hero-panel">
+        <div className="section-title"><LineChart size={18} /><h3>Estatísticas do dia</h3></div>
+        <div className="stat-grid wide">
+          <span>Tips submetidas <b>{dailyStats.total.submitted}</b></span>
+          <span>Finais do streamer <b>{dailyStats.total.selected}</b></span>
+          <span>Lucro total <b>{dailyStats.total.profit >= 0 ? "+" : ""}{dailyStats.total.profit.toFixed(2)}u</b></span>
+          <span>ROI <b>{dailyStats.total.roi.toFixed(1)}%</b></span>
+        </div>
+        <ProfitChart points={profitTimeline} />
+      </section>
+
+      <section className="panel stats-table-panel">
+        <div className="section-title"><Trophy size={18} /><h3>Performance por pessoa</h3></div>
+        <div className="stats-table">
+          <div className="stats-table-head"><span>Pessoa</span><span>Tips</span><span>Finais</span><span>Resolvidas</span><span>Stake</span><span>Lucro</span><span>ROI</span></div>
+          {users.map((user) => {
+            const row = dailyStats.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
+              submitted: 0,
+              selected: 0,
+              settled: 0,
+              pendingSelected: 0,
+              staked: 0,
+              profit: 0,
+              roi: 0
+            };
+            return (
+              <div className="stats-table-row" key={user.id}>
+                <span className="viewer-cell"><Avatar user={user} /> {user.displayName}</span>
+                <span>{row.submitted}</span>
+                <span>{row.selected}</span>
+                <span>{row.settled}</span>
+                <span>{row.staked.toFixed(2)}u</span>
+                <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+                <span>{row.roi.toFixed(1)}%</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="panel stats-table-panel">
+        <div className="section-title"><Trophy size={18} /><h3>Leaderboard geral</h3></div>
+        <div className="leaderboard">
+          {leaderboard.map((row, index) => (
+            <div className="leader-row" key={row.user.id}>
+              <span>{index + 1}</span>
+              <Avatar user={row.user} />
+              <strong>{row.user.displayName}</strong>
+              <small>{row.picks} resolvidas · {row.winrate.toFixed(0)}%</small>
+              <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+            </div>
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 function ProfitChart({ points }: { points: Array<{ label: string; profit: number; cumulative: number }> }) {
-  if (points.length === 0) {
-    return <div className="chart-empty">Ainda não há picks finais resolvidas para desenhar evolução.</div>;
-  }
+  if (points.length === 0) return <div className="chart-empty">Ainda não há picks finais resolvidas para desenhar evolução.</div>;
 
   const width = 760;
   const height = 260;
@@ -795,13 +707,11 @@ function ProfitChart({ points }: { points: Array<{ label: string; profit: number
   const min = Math.min(0, ...values);
   const max = Math.max(0, ...values);
   const range = max - min || 1;
-
   const coords = points.map((point, index) => {
     const x = padding + (index / Math.max(points.length - 1, 1)) * (width - padding * 2);
     const y = height - padding - ((point.cumulative - min) / range) * (height - padding * 2);
     return { ...point, x, y };
   });
-
   const path = coords.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
   const zeroY = height - padding - ((0 - min) / range) * (height - padding * 2);
 
@@ -824,6 +734,7 @@ function ProfitChart({ points }: { points: Array<{ label: string; profit: number
 function createStarterPicks(todayMatches: Match[]): Pick[] {
   const first = todayMatches[0];
   const second = todayMatches[1] ?? todayMatches[0];
+  const third = todayMatches[2] ?? todayMatches[0];
   if (!first) return [];
 
   return [
@@ -836,7 +747,7 @@ function createStarterPicks(todayMatches: Match[]): Pick[] {
       odds: 2.1,
       stake: 1,
       bookmaker: "Manual",
-      reason: "Pick inicial para testar a votacao da comunidade com jogos reais de hoje.",
+      reason: "Pick inicial para testar a votação da comunidade com jogos reais de hoje.",
       status: "pending",
       profit: 0,
       createdAt: new Date().toISOString()
@@ -850,7 +761,21 @@ function createStarterPicks(todayMatches: Match[]): Pick[] {
       odds: 1.85,
       stake: 1,
       bookmaker: "Manual",
-      reason: "Mercado popular para simular odds manuais enquanto a API so fornece calendario/resultados.",
+      reason: "Mercado popular para simular odds manuais enquanto a API fornece calendário e resultados.",
+      status: "pending",
+      profit: 0,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "api-p-3",
+      matchId: third.id,
+      userId: "u-serginho",
+      marketType: "BTTS",
+      selection: "Ambas marcam: Sim",
+      odds: 1.78,
+      stake: 1,
+      bookmaker: "Manual",
+      reason: "Tip do streamer para mostrar que o SerginhoEsteves também participa no boletim.",
       status: "pending",
       profit: 0,
       createdAt: new Date().toISOString()

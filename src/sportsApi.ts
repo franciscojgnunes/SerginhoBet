@@ -19,7 +19,36 @@ const espnSoccerLeagues = [
   "bra.1",
   "usa.1",
   "mex.1",
-  "arg.1"
+  "arg.1",
+  "sco.1",
+  "bel.1",
+  "tur.1",
+  "gre.1",
+  "aut.1",
+  "sui.1",
+  "den.1",
+  "nor.1",
+  "swe.1",
+  "fin.1",
+  "pol.1",
+  "cze.1",
+  "cro.1",
+  "rou.1",
+  "chn.1",
+  "jpn.1",
+  "kor.1",
+  "aus.1",
+  "idn.1",
+  "ind.1",
+  "ksa.1",
+  "qat.1",
+  "uae.1",
+  "rsa.1",
+  "col.1",
+  "chi.1",
+  "per.1",
+  "uru.1",
+  "ecu.1"
 ];
 
 type SportsDbEvent = {
@@ -32,6 +61,9 @@ type SportsDbEvent = {
   intHomeScore: string | null;
   intAwayScore: string | null;
   strStatus: string | null;
+  strHomeTeamBadge: string | null;
+  strAwayTeamBadge: string | null;
+  strVenue: string | null;
 };
 
 type SportsDbResponse = {
@@ -51,13 +83,19 @@ type EspnEvent = {
     abbreviation?: string;
   };
   competitions?: Array<{
+    venue?: {
+      fullName?: string;
+    };
     competitors?: Array<{
       homeAway: "home" | "away";
       score?: string;
       team: {
         displayName?: string;
         shortDisplayName?: string;
+        logo?: string;
+        logos?: Array<{ href?: string }>;
       };
+      records?: Array<{ summary?: string; type?: string }>;
     }>;
     status?: {
       type?: {
@@ -67,6 +105,9 @@ type EspnEvent = {
     };
   }>;
 };
+
+type EspnCompetition = NonNullable<EspnEvent["competitions"]>[number];
+type EspnCompetitor = NonNullable<EspnCompetition["competitors"]>[number];
 
 export async function fetchTodayMatches(date = new Date()) {
   const day = date.toISOString().slice(0, 10);
@@ -118,6 +159,9 @@ function mapSportsDbEvent(event: SportsDbEvent): Match {
     status: getSportsDbStatus(event.strStatus, homeScore, awayScore),
     homeScore,
     awayScore,
+    homeLogoUrl: event.strHomeTeamBadge ?? undefined,
+    awayLogoUrl: event.strAwayTeamBadge ?? undefined,
+    venue: event.strVenue ?? undefined,
     source: "api"
   };
 }
@@ -138,8 +182,21 @@ function mapEspnEvent(event: EspnEvent, leagueSlug: string): Match {
     status: getEspnStatus(competition?.status?.type?.state, competition?.status?.type?.completed),
     homeScore,
     awayScore,
+    homeLogoUrl: getEspnLogo(home),
+    awayLogoUrl: getEspnLogo(away),
+    homeRecord: getEspnRecord(home),
+    awayRecord: getEspnRecord(away),
+    venue: competition?.venue?.fullName,
     source: "api"
   };
+}
+
+function getEspnLogo(competitor?: EspnCompetitor) {
+  return competitor?.team.logo ?? competitor?.team.logos?.[0]?.href;
+}
+
+function getEspnRecord(competitor?: EspnCompetitor) {
+  return competitor?.records?.find((record) => record.type === "total")?.summary ?? competitor?.records?.[0]?.summary;
 }
 
 function normalizeTimestamp(value: string | null) {

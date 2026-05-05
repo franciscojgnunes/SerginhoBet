@@ -34,6 +34,11 @@ export type Match = {
   status: MatchStatus;
   homeScore?: number;
   awayScore?: number;
+  homeLogoUrl?: string;
+  awayLogoUrl?: string;
+  homeRecord?: string;
+  awayRecord?: string;
+  venue?: string;
   source?: "api" | "demo";
 };
 
