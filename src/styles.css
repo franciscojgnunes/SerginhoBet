@@ -799,6 +799,29 @@ h1 {
   background: var(--green);
 }
 
+.slip-mode-toggle {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 12px;
+  padding: 6px;
+}
+
+.slip-mode-toggle button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  min-height: 36px;
+}
+
+.slip-mode-toggle button.active {
+  background: var(--lime);
+  color: #06130d;
+}
+
 .candidate-list {
   display: grid;
   gap: 8px;
@@ -1012,6 +1035,30 @@ h1 {
 .slip-list {
   display: grid;
   gap: 10px;
+}
+
+.slip-mode-summary {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 10px;
+}
+
+.slip-mode-summary.combined {
+  border-color: var(--line-strong);
+}
+
+.slip-mode-summary strong {
+  color: var(--lime);
+}
+
+.slip-mode-summary span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
 }
 
 .slip-item {

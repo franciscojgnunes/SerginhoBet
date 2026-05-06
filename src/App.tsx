@@ -118,6 +118,7 @@ export function App() {
   const [votes, setVotes] = useState<VoteRecord[]>([]);
   const [dailySlip, setDailySlip] = useState<DailySlip>({
     status: "draft",
+    mode: "combined",
     pickIds: [],
     generatedAt: currentDate.toISOString()
   });
@@ -146,14 +147,14 @@ export function App() {
       setMatchSync(todayMatches.length > 0 ? "live" : "empty");
       setPicks(createStarterPicks(upcomingMatches));
       setVotes([]);
-      setDailySlip({ status: "draft", pickIds: [], generatedAt: new Date().toISOString() });
+      setDailySlip((slip) => ({ ...slip, status: "draft", pickIds: [], generatedAt: new Date().toISOString() }));
     } catch {
       setMatches(fallbackMatches);
       setSelectedMatchId("");
       setMatchSync("fallback");
       setPicks([]);
       setVotes([]);
-      setDailySlip({ status: "draft", pickIds: [], generatedAt: new Date().toISOString() });
+      setDailySlip((slip) => ({ ...slip, status: "draft", pickIds: [], generatedAt: new Date().toISOString() }));
     }
   }
 
@@ -188,6 +189,7 @@ export function App() {
     .filter((pick): pick is Pick => Boolean(pick));
 
   const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
+  const multiplesStake = topSlipPicks.reduce((total, pick) => total + pick.stake, 0);
   const communityBankroll = calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds);
   const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
   const suggestedPicks = selectSlipPicks(picks, votes, 8);
@@ -248,7 +250,12 @@ export function App() {
   }
 
   function generateSlip() {
-    setDailySlip({ status: "draft", pickIds: selectSlipPicks(picks, votes, 4).map((pick) => pick.id), generatedAt: new Date().toISOString() });
+    setDailySlip((slip) => ({
+      ...slip,
+      status: "draft",
+      pickIds: selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
+      generatedAt: new Date().toISOString()
+    }));
   }
 
   function publishSlip() {
@@ -261,6 +268,10 @@ export function App() {
       const exists = slip.pickIds.includes(pickId);
       return { ...slip, status: "draft", pickIds: exists ? slip.pickIds.filter((id) => id !== pickId) : [...slip.pickIds, pickId] };
     });
+  }
+
+  function setSlipMode(mode: DailySlip["mode"]) {
+    setDailySlip((slip) => ({ ...slip, status: "draft", mode }));
   }
 
   function settlePick(pickId: string, status: PickStatus) {
@@ -498,6 +509,14 @@ export function App() {
                   <button onClick={generateSlip}><Sparkles size={16} />Preencher por votos</button>
                   <button className="secondary" onClick={publishSlip}><CheckCircle2 size={16} />Publicar finais</button>
                 </div>
+                <div className="slip-mode-toggle" aria-label="Tipo de boletim">
+                  <button className={dailySlip.mode === "combined" ? "active" : ""} onClick={() => setSlipMode("combined")}>
+                    Combinada
+                  </button>
+                  <button className={dailySlip.mode === "multiples" ? "active" : ""} onClick={() => setSlipMode("multiples")}>
+                    Múltiplas
+                  </button>
+                </div>
                 <div className="candidate-list">
                   {suggestedPicks.map((pick) => {
                     const match = matches.find((item) => item.id === pick.matchId);
@@ -516,7 +535,14 @@ export function App() {
                 </div>
               </section>
             ) : null}
-            <SlipPanel picks={topSlipPicks} matches={matches} combinedOdds={combinedOdds} status={dailySlip.status} />
+            <SlipPanel
+              picks={topSlipPicks}
+              matches={matches}
+              combinedOdds={combinedOdds}
+              multiplesStake={multiplesStake}
+              mode={dailySlip.mode}
+              status={dailySlip.status}
+            />
             <BankPanel bankroll={communityBankroll} />
             {isStreamer ? <AdminPanel pendingPicks={pendingPicks} onSettle={settlePick} /> : null}
           </aside>
@@ -587,12 +613,36 @@ function TipForm({
   );
 }
 
-function SlipPanel({ picks, matches, combinedOdds, status }: { picks: Pick[]; matches: Match[]; combinedOdds: number; status: DailySlip["status"] }) {
+function SlipPanel({
+  picks,
+  matches,
+  combinedOdds,
+  multiplesStake,
+  mode,
+  status
+}: {
+  picks: Pick[];
+  matches: Match[];
+  combinedOdds: number;
+  multiplesStake: number;
+  mode: DailySlip["mode"];
+  status: DailySlip["status"];
+}) {
+  const modeLabel = mode === "combined" ? "Combinada" : "Múltiplas";
+
   return (
     <section className="panel slip-panel">
       <div className="section-title spread">
         <div><ShieldCheck size={18} /><h3>Picks finais do streamer</h3></div>
         <span className={`slip-state ${status}`}>{status}</span>
+      </div>
+      <div className={`slip-mode-summary ${mode}`}>
+        <strong>{modeLabel}</strong>
+        <span>
+          {mode === "combined"
+            ? "Uma aposta acumulada: todas as picks precisam bater."
+            : "Apostas individuais: cada pick conta separadamente."}
+        </span>
       </div>
       <div className="slip-list">
         {picks.map((pick, index) => {
@@ -610,8 +660,8 @@ function SlipPanel({ picks, matches, combinedOdds, status }: { picks: Pick[]; ma
         {picks.length === 0 ? <p className="empty-copy">O streamer escolhe aqui as tips finais a partir dos votos.</p> : null}
       </div>
       <div className="combined-odds">
-        <span>Odd combinada</span>
-        <strong>{picks.length ? combinedOdds.toFixed(2) : "0.00"}</strong>
+        <span>{mode === "combined" ? "Odd combinada" : "Stake total"}</span>
+        <strong>{mode === "combined" ? (picks.length ? combinedOdds.toFixed(2) : "0.00") : `${multiplesStake.toFixed(2)}u`}</strong>
       </div>
     </section>
   );

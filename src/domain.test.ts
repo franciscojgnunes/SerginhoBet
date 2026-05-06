@@ -169,6 +169,7 @@ describe("PickRoom domain logic", () => {
     expect(cleanCompetitionName("Czech National Football League")).toBe("Chéquia 2ª Liga");
     expect(cleanCompetitionName("  UEFA Champions League  ")).toBe("Champions League");
     expect(cleanCompetitionName("rsa.1")).toBe("RSA Premiership");
+    expect(cleanCompetitionName("conmebol.libertadores")).toBe("Copa Libertadores");
   });
 
   it("calculates daily totals and per-viewer stats for streamer decisions", () => {

@@ -77,6 +77,8 @@ export function filterUpcomingScheduledMatches(matches: Match[], now = new Date(
 const competitionNameMap: Record<string, string> = {
   "Austrian Regionalliga Ost": "Áustria Regionalliga Ost",
   "Chinese Super League": "China Super League",
+  "CONMEBOL Libertadores": "Copa Libertadores",
+  "CONMEBOL Sudamericana": "Copa Sudamericana",
   "Czech National Football League": "Chéquia 2ª Liga",
   "Indian Super League": "Índia Super League",
   "Saudi Pro League": "Saudi Pro League",
@@ -132,6 +134,8 @@ const competitionNameMap: Record<string, string> = {
   "swe.1": "Suécia Allsvenskan",
   "tur.1": "Turquia Süper Lig",
   "uae.1": "EAU Pro League",
+  "conmebol.libertadores": "Copa Libertadores",
+  "conmebol.sudamericana": "Copa Sudamericana",
   "uefa.champions": "Champions League",
   "uefa.europa": "Europa League",
   "uefa.europa.conf": "Conference League",

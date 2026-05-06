@@ -5,6 +5,8 @@ const espnSoccerLeagues = [
   "uefa.champions",
   "uefa.europa",
   "uefa.europa.conf",
+  "conmebol.libertadores",
+  "conmebol.sudamericana",
   "concacaf.champions",
   "afc.champions",
   "caf.champions",
