@@ -359,11 +359,38 @@ h1 {
   gap: 18px;
   grid-template-columns: minmax(0, 1fr);
   margin: 0 auto;
-  max-width: 1180px;
+  max-width: 1280px;
 }
 
 .games-center {
   min-width: 0;
+}
+
+.games-toolbar {
+  gap: 12px;
+}
+
+.games-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.games-actions button {
+  min-height: 36px;
+}
+
+.games-actions .secondary {
+  background: var(--green);
+  color: #04100a;
+}
+
+.games-actions .ghost {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
 }
 
 .games-grid {

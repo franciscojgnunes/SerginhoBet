@@ -1,10 +1,7 @@
 import {
   Activity,
-  Banknote,
   CalendarDays,
   CheckCircle2,
-  CircleDollarSign,
-  Eye,
   Flame,
   Gauge,
   LineChart,
@@ -31,8 +28,8 @@ import {
 import { fetchTodayMatches } from "./sportsApi";
 import type { DailySlip, MarketType, Match, Pick, PickStatus, User, Vote as VoteRecord, VoteType } from "./types";
 
-const currentDate = new Date("2026-05-05T12:00:00+01:00");
-const tipDay = "2026-05-05";
+const currentDate = new Date();
+const tipDay = currentDate.toISOString().slice(0, 10);
 const communityInitialBankroll = 100;
 
 const marketOptions: MarketType[] = [
@@ -333,65 +330,30 @@ export function App() {
         </div>
       </header>
 
-      <section className="hero-grid compact">
-        <div className="hero-copy">
-          <div className={`sync-chip ${matchSync}`}>
-            <RefreshCw size={15} />
-            {matchSync === "loading" ? "A sincronizar jogos de hoje" : null}
-            {matchSync === "live" ? "Jogos de hoje via ESPN + TheSportsDB" : null}
-            {matchSync === "empty" ? "Sem jogos reais encontrados para hoje" : null}
-            {matchSync === "fallback" ? "APIs indisponíveis" : null}
-          </div>
-          <h2>Escolhe o jogo, cria a tip, deixa a stream votar.</h2>
-          <p>
-            Os jogos terminados ficam fora. O SerginhoEsteves também pode lançar tips e escolhe as finais para a banca coletiva.
-          </p>
-          <div className="hero-actions">
-            <button onClick={() => setActivePage("games")}>
-              <Eye size={18} />
-              Abrir jogos de hoje
-            </button>
-            {isStreamer ? (
-              <button className="secondary" onClick={publishSlip}>
-                <CheckCircle2 size={18} />
-                Publicar finais
-              </button>
-            ) : null}
-            <button className="ghost" onClick={syncTodayMatches}>
-              <RefreshCw size={18} />
-              Atualizar jogos
-            </button>
-          </div>
-        </div>
-
-        <div className="bankroll-card">
-          <div className="bankroll-top">
-            <Banknote size={24} />
-            <span>Banca da comunidade</span>
-          </div>
-          <strong>{communityBankroll.current.toFixed(2)}u</strong>
-          <div className="bankroll-grid">
-            <span>Inicial <b>{communityBankroll.initial}u</b></span>
-            <span>Exposto <b>{communityBankroll.exposure.toFixed(2)}u</b></span>
-            <span>Lucro <b>{communityBankroll.settledProfit >= 0 ? "+" : ""}{communityBankroll.settledProfit.toFixed(2)}u</b></span>
-            <span>ROI <b>{communityBankroll.roi.toFixed(1)}%</b></span>
-          </div>
-        </div>
-      </section>
-
-      <section className="metric-strip">
-        <div><CalendarDays size={18} /><span>{openMatches.length}</span><p>Jogos abertos hoje</p></div>
-        <div><Vote size={18} /><span>{pendingPicks.length}</span><p>Tips em votação</p></div>
-        <div><ShieldCheck size={18} /><span>{topSlipPicks.length}</span><p>Finais do streamer</p></div>
-        <div><CircleDollarSign size={18} /><span>{topSlipPicks.length ? combinedOdds.toFixed(2) : "0.00"}</span><p>Odd combinada</p></div>
-      </section>
-
       {activePage === "games" ? (
         <section className="games-page">
           <section className="panel games-center">
-            <div className="section-title spread">
+            <div className="section-title spread games-toolbar">
               <div><CalendarDays size={18} /><h3>Jogos de hoje</h3></div>
-              <span>{matchSync === "live" ? "API" : "Sem demo"}</span>
+              <div className="games-actions">
+                <span className={`sync-chip ${matchSync}`}>
+                  <RefreshCw size={15} />
+                  {matchSync === "loading" ? "A sincronizar" : null}
+                  {matchSync === "live" ? `${openMatches.length} jogos via API` : null}
+                  {matchSync === "empty" ? "Sem jogos reais hoje" : null}
+                  {matchSync === "fallback" ? "APIs indisponíveis" : null}
+                </span>
+                {isStreamer ? (
+                  <button className="secondary" onClick={publishSlip}>
+                    <CheckCircle2 size={16} />
+                    Publicar finais
+                  </button>
+                ) : null}
+                <button className="ghost" onClick={syncTodayMatches}>
+                  <RefreshCw size={16} />
+                  Atualizar
+                </button>
+              </div>
             </div>
             <div className="games-grid">
               {openMatches.map((match) => (
