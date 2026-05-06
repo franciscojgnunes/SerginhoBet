@@ -24,6 +24,7 @@ import {
   calculateProfit,
   filterUpcomingScheduledMatches,
   getLocalDateKey,
+  roundUnits,
   scorePick,
   selectSlipPicks
 } from "./domain";
@@ -121,6 +122,8 @@ export function App() {
     status: "draft",
     mode: "combined",
     combinedStake: 1,
+    settlementStatus: "pending",
+    profit: 0,
     pickIds: [],
     generatedAt: currentDate.toISOString()
   });
@@ -149,14 +152,14 @@ export function App() {
       setMatchSync(todayMatches.length > 0 ? "live" : "empty");
       setPicks(createStarterPicks(upcomingMatches));
       setVotes([]);
-      setDailySlip((slip) => ({ ...slip, status: "draft", pickIds: [], generatedAt: new Date().toISOString() }));
+      setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, pickIds: [], generatedAt: new Date().toISOString() }));
     } catch {
       setMatches(fallbackMatches);
       setSelectedMatchId("");
       setMatchSync("fallback");
       setPicks([]);
       setVotes([]);
-      setDailySlip((slip) => ({ ...slip, status: "draft", pickIds: [], generatedAt: new Date().toISOString() }));
+      setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, pickIds: [], generatedAt: new Date().toISOString() }));
     }
   }
 
@@ -191,11 +194,44 @@ export function App() {
 
   const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
   const multiplesStake = topSlipPicks.reduce((total, pick) => total + pick.stake, 0);
-  const slipExposure = dailySlip.mode === "combined" && topSlipPicks.length > 0 ? dailySlip.combinedStake : multiplesStake;
-  const communityBankroll = { ...calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds), exposure: slipExposure };
+  const isPublishedSlip = dailySlip.status === "published" && topSlipPicks.length > 0;
+  const combinedSlipSettled = dailySlip.mode === "combined" && dailySlip.settlementStatus !== "pending";
+  const slipExposure = isPublishedSlip && !combinedSlipSettled
+    ? dailySlip.mode === "combined" ? dailySlip.combinedStake : multiplesStake
+    : 0;
+  const baseBankroll = calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds);
+  const communityBankroll = dailySlip.mode === "combined"
+    ? {
+        initial: communityInitialBankroll,
+        current: roundUnits(communityInitialBankroll + dailySlip.profit),
+        exposure: slipExposure,
+        settledProfit: dailySlip.settlementStatus === "pending" ? 0 : dailySlip.profit,
+        roi: dailySlip.settlementStatus !== "pending" && dailySlip.combinedStake > 0
+          ? roundUnits((dailySlip.profit / dailySlip.combinedStake) * 100)
+          : 0
+      }
+    : { ...baseBankroll, exposure: slipExposure };
   const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
   const suggestedPicks = selectSlipPicks(picks, votes, 8);
   const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
+  const displayedDailyStats = dailySlip.mode === "combined" && dailySlip.status === "published"
+    ? {
+        ...dailyStats,
+        total: {
+          ...dailyStats.total,
+          settled: dailySlip.settlementStatus === "pending" ? 0 : 1,
+          pendingSelected: dailySlip.settlementStatus === "pending" ? topSlipPicks.length : 0,
+          staked: dailySlip.settlementStatus === "pending" ? 0 : dailySlip.combinedStake,
+          profit: dailySlip.settlementStatus === "pending" ? 0 : dailySlip.profit,
+          roi: dailySlip.settlementStatus !== "pending" && dailySlip.combinedStake > 0
+            ? roundUnits((dailySlip.profit / dailySlip.combinedStake) * 100)
+            : 0
+        }
+      }
+    : dailyStats;
+  const displayedProfitTimeline = dailySlip.mode === "combined" && dailySlip.status === "published" && dailySlip.settlementStatus !== "pending"
+    ? [{ label: "Boletim", profit: dailySlip.profit, cumulative: dailySlip.profit }]
+    : profitTimeline;
 
   const leaderboard = useMemo(() => {
     return users
@@ -255,30 +291,44 @@ export function App() {
     setDailySlip((slip) => ({
       ...slip,
       status: "draft",
+      settlementStatus: "pending",
+      profit: 0,
       pickIds: selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
       generatedAt: new Date().toISOString()
     }));
   }
 
   function publishSlip() {
-    if (dailySlip.pickIds.length === 0) generateSlip();
-    setDailySlip((slip) => ({ ...slip, status: "published" }));
+    setDailySlip((slip) => ({
+      ...slip,
+      status: "published",
+      settlementStatus: "pending",
+      profit: 0,
+      pickIds: slip.pickIds.length > 0 ? slip.pickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
+      generatedAt: new Date().toISOString()
+    }));
   }
 
   function toggleFinalPick(pickId: string) {
     setDailySlip((slip) => {
       const exists = slip.pickIds.includes(pickId);
-      return { ...slip, status: "draft", pickIds: exists ? slip.pickIds.filter((id) => id !== pickId) : [...slip.pickIds, pickId] };
+      return {
+        ...slip,
+        status: "draft",
+        settlementStatus: "pending",
+        profit: 0,
+        pickIds: exists ? slip.pickIds.filter((id) => id !== pickId) : [...slip.pickIds, pickId]
+      };
     });
   }
 
   function setSlipMode(mode: DailySlip["mode"]) {
-    setDailySlip((slip) => ({ ...slip, status: "draft", mode }));
+    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, mode }));
   }
 
   function setCombinedStake(value: number) {
     if (!Number.isFinite(value) || value <= 0) return;
-    setDailySlip((slip) => ({ ...slip, status: "draft", combinedStake: value }));
+    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, combinedStake: value }));
   }
 
   function settlePick(pickId: string, status: PickStatus) {
@@ -287,6 +337,14 @@ export function App() {
         pick.id === pickId ? { ...pick, status, profit: calculateProfit(status, pick.stake, pick.odds) } : pick
       )
     );
+  }
+
+  function settleCombinedSlip(status: PickStatus) {
+    setDailySlip((slip) => ({
+      ...slip,
+      settlementStatus: status,
+      profit: calculateProfit(status, slip.combinedStake, combinedOdds)
+    }));
   }
 
   function loginAs(role: "viewer" | "streamer") {
@@ -570,11 +628,18 @@ export function App() {
       ) : null}
 
       {activePage === "resolve" && isStreamer ? (
-        <ResolvePage picks={picks} matches={matches} onSettle={settlePick} />
+        <ResolvePage
+          dailySlip={dailySlip}
+          picks={topSlipPicks}
+          matches={matches}
+          combinedOdds={combinedOdds}
+          onSettlePick={settlePick}
+          onSettleCombined={settleCombinedSlip}
+        />
       ) : null}
 
       {activePage === "stats" ? (
-        <StatsPage dailyStats={dailyStats} profitTimeline={profitTimeline} leaderboard={leaderboard} />
+        <StatsPage dailyStats={displayedDailyStats} profitTimeline={displayedProfitTimeline} leaderboard={leaderboard} />
       ) : null}
 
       <footer className="disclaimer">
@@ -700,7 +765,139 @@ function SlipPanel({
   );
 }
 
-function ResolvePage({ picks, matches, onSettle }: { picks: Pick[]; matches: Match[]; onSettle: (pickId: string, status: PickStatus) => void }) {
+function ResolvePage({
+  dailySlip,
+  picks,
+  matches,
+  combinedOdds,
+  onSettlePick,
+  onSettleCombined
+}: {
+  dailySlip: DailySlip;
+  picks: Pick[];
+  matches: Match[];
+  combinedOdds: number;
+  onSettlePick: (pickId: string, status: PickStatus) => void;
+  onSettleCombined: (status: PickStatus) => void;
+}) {
+  const combinedReturn = roundUnits(dailySlip.combinedStake * combinedOdds);
+  const orderedPicks = [...picks].sort((left, right) => {
+    if (left.status === "pending" && right.status !== "pending") return -1;
+    if (left.status !== "pending" && right.status === "pending") return 1;
+    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+  });
+  const canResolve = dailySlip.status === "published" && orderedPicks.length > 0;
+
+  if (!canResolve) {
+    return (
+      <section className="resolve-page">
+        <section className="panel resolve-panel">
+          <div className="section-title spread">
+            <div><Activity size={18} /><h3>Resolver aposta</h3></div>
+            <span>Sem aposta publicada</span>
+          </div>
+          <div className="resolve-empty">
+            <ShieldCheck size={34} />
+            <strong>Publica a aposta final primeiro</strong>
+            <p>So aparece no Resolver aquilo que o SerginhoEsteves publicar na aba Comunidade.</p>
+          </div>
+        </section>
+      </section>
+    );
+  }
+
+  if (dailySlip.mode === "combined") {
+    return (
+      <section className="resolve-page">
+        <section className="panel resolve-panel">
+          <div className="section-title spread">
+            <div><Activity size={18} /><h3>Resolver combinada</h3></div>
+            <span>1 aposta publicada</span>
+          </div>
+          <article className="combined-resolve-card">
+            <div className="resolve-slip-summary">
+              <div>
+                <strong>Combinada da comunidade</strong>
+                <span>Se uma tip falhar, a combinada inteira fica perdida.</span>
+              </div>
+              <div className={`status ${dailySlip.settlementStatus}`}>{statusLabel(dailySlip.settlementStatus)}</div>
+            </div>
+            <div className="combined-resolve-list">
+              {orderedPicks.map((pick, index) => {
+                const match = matches.find((item) => item.id === pick.matchId);
+                const author = userById(pick.userId);
+                return (
+                  <div className="combined-resolve-item" key={pick.id}>
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{pick.selection}</strong>
+                      <small>{author.displayName} - {match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"} - @{pick.odds.toFixed(2)}</small>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="resolve-slip-footer">
+              <span>Stake <b>{dailySlip.combinedStake.toFixed(2)}u</b></span>
+              <span>Odd combinada <b>{combinedOdds.toFixed(2)}</b></span>
+              <span>Retorno possivel <b>{combinedReturn.toFixed(2)}u</b></span>
+              <span>Resultado <b>{dailySlip.profit >= 0 ? "+" : ""}{dailySlip.profit.toFixed(2)}u</b></span>
+              <select value={dailySlip.settlementStatus} onChange={(event) => onSettleCombined(event.target.value as PickStatus)}>
+                <option value="pending">Pendente</option>
+                <option value="won">Ganha</option>
+                <option value="lost">Perdida</option>
+                <option value="void">Void</option>
+              </select>
+            </div>
+          </article>
+        </section>
+      </section>
+    );
+  }
+
+  return (
+    <section className="resolve-page">
+      <section className="panel resolve-panel">
+        <div className="section-title spread">
+          <div><Activity size={18} /><h3>Resolver multiplas</h3></div>
+          <span>{orderedPicks.filter((pick) => pick.status === "pending").length} pendentes</span>
+        </div>
+        <div className="resolve-list">
+          {orderedPicks.map((pick) => {
+            const match = matches.find((item) => item.id === pick.matchId);
+            const author = userById(pick.userId);
+            return (
+              <article className="resolve-row" key={pick.id}>
+                <div className="author">
+                  <Avatar user={author} />
+                  <div>
+                    <strong>{author.displayName}</strong>
+                    <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                  </div>
+                </div>
+                <div>
+                  <strong>{pick.selection}</strong>
+                  <small>{pick.marketType} - @{pick.odds.toFixed(2)} - {pick.stake}u</small>
+                </div>
+                <div className={`status ${pick.status}`}>{statusLabel(pick.status)}</div>
+                <select value={pick.status} onChange={(event) => onSettlePick(pick.id, event.target.value as PickStatus)}>
+                  <option value="pending">Pendente</option>
+                  <option value="won">Ganha</option>
+                  <option value="lost">Perdida</option>
+                  <option value="void">Void</option>
+                  <option value="half_won">Meia ganha</option>
+                  <option value="half_lost">Meia perdida</option>
+                </select>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function LegacyResolvePage({ picks, matches, onSettle }: { picks: Pick[]; matches: Match[]; onSettle: (pickId: string, status: PickStatus) => void }) {
   const orderedPicks = [...picks].sort((left, right) => {
     if (left.status === "pending" && right.status !== "pending") return -1;
     if (left.status !== "pending" && right.status === "pending") return 1;

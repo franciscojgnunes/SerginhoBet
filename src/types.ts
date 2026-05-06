@@ -67,6 +67,8 @@ export type DailySlip = {
   status: "draft" | "published";
   mode: "combined" | "multiples";
   combinedStake: number;
+  settlementStatus: PickStatus;
+  profit: number;
   pickIds: string[];
   generatedAt: string;
 };
