@@ -88,6 +88,7 @@ function readStoredValue<T>(key: string, fallback: T): T {
     const stored = localStorage.getItem(key);
     if (!stored) return fallback;
     const parsed = JSON.parse(stored);
+    if (typeof fallback !== "object" || fallback === null) return parsed;
     return Array.isArray(fallback) ? parsed : { ...fallback, ...parsed };
   } catch {
     return fallback;
@@ -158,6 +159,7 @@ export function App() {
   const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []));
   const [votes, setVotes] = useState<VoteRecord[]>(() => readStoredValue<VoteRecord[]>(votesCacheKey, []));
   const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
+  const [popup, setPopup] = useState<{ title: string; body: string } | null>(null);
   const [activePage, setActivePage] = useState<Page>("games");
   const [competitionFilter, setCompetitionFilter] = useState("all");
   const [formState, setFormState] = useState({
@@ -294,6 +296,23 @@ export function App() {
     ? [{ label: "Boletim", profit: dailySlip.profit, cumulative: dailySlip.profit }]
     : profitTimeline;
 
+  useEffect(() => {
+    if (!isLoggedIn || isStreamer || dailySlip.status !== "published" || topSlipPicks.length === 0) return;
+    const finalGamesStillOpen = topSlipPicks.every((pick) => {
+      const match = matches.find((item) => item.id === pick.matchId);
+      return match && match.status === "scheduled" && new Date(match.startsAt).getTime() > Date.now();
+    });
+    if (!finalGamesStillOpen) return;
+
+    const seenKey = `pickroom:published-popup:${tipDay}:${activeUserId}:${dailySlip.generatedAt}`;
+    if (readStoredValue(seenKey, false)) return;
+    writeStoredValue(seenKey, true);
+    setPopup({
+      title: "Boletim publicado",
+      body: `O SerginhoEsteves publicou a aposta da comunidade com ${topSlipPicks.length} picks finais. Ainda vais a tempo de ver antes dos jogos comecarem.`
+    });
+  }, [activeUserId, dailySlip.generatedAt, dailySlip.status, isLoggedIn, isStreamer, matches, topSlipPicks]);
+
   const leaderboard = useMemo(() => {
     if (dailySlip.mode === "combined" && dailySlip.status === "published") {
       return users
@@ -307,7 +326,7 @@ export function App() {
             winrate: row && row.settled > 0 && dailySlip.settlementStatus === "won" ? 100 : 0
           };
         })
-        .sort((a, b) => b.profit - a.profit);
+        .sort((a, b) => b.profit - a.profit || b.roi - a.roi || b.winrate - a.winrate);
     }
 
     return users
@@ -324,17 +343,17 @@ export function App() {
           winrate: settled.length > 0 ? (wins / settled.length) * 100 : 0
         };
       })
-      .sort((a, b) => b.profit - a.profit);
+      .sort((a, b) => b.profit - a.profit || b.roi - a.roi || b.winrate - a.winrate);
   }, [dailySlip.mode, dailySlip.settlementStatus, dailySlip.status, displayedDailyStats.byViewer, picks]);
 
   function submitPick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const odds = Number(formState.odds);
     const stake = Number(formState.stake);
-    if (!selectedMatch || !formState.selection.trim() || !formState.reason.trim() || odds <= 1 || stake <= 0) return;
+    if (!selectedMatch || !formState.selection.trim() || odds <= 1 || stake <= 0) return;
 
     const nextPick: Pick = {
-      id: `p-${Date.now()}`,
+      id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       matchId: selectedMatch.id,
       userId: activeUserId,
       marketType: formState.marketType,
@@ -342,14 +361,17 @@ export function App() {
       odds,
       stake,
       bookmaker: formState.bookmaker.trim() || "Manual",
-      reason: formState.reason.trim(),
+      reason: formState.reason.trim() || "Sem justificação.",
       status: "pending",
       profit: 0,
       createdAt: new Date().toISOString()
     };
 
     setPicks((current) => [nextPick, ...current]);
-    setActivePage("community");
+    setPopup({
+      title: "Pick registada",
+      body: `${nextPick.selection} ficou guardada no teu historico e ja aparece na comunidade para votacao.`
+    });
     setFormState({ marketType: "1X2", selection: "", odds: "2.00", stake: "1", bookmaker: "Manual", reason: "" });
   }
 
@@ -755,7 +777,25 @@ export function App() {
         <UserRound size={16} />
         Unidades fictícias. Sem dinheiro real, depósitos, cashout ou execução de apostas.
       </footer>
+      {popup ? <AppPopup title={popup.title} body={popup.body} onClose={() => setPopup(null)} /> : null}
     </main>
+  );
+}
+
+function AppPopup({ title, body, onClose }: { title: string; body: string; onClose: () => void }) {
+  return (
+    <div className="popup-backdrop" role="dialog" aria-modal="true" aria-labelledby="popup-title">
+      <section className="popup-card">
+        <div className="brand-mark">
+          <CheckCircle2 size={22} />
+        </div>
+        <div>
+          <h3 id="popup-title">{title}</h3>
+          <p>{body}</p>
+        </div>
+        <button onClick={onClose}>OK</button>
+      </section>
+    </div>
   );
 }
 
@@ -797,6 +837,10 @@ function ViewerBetsPage({
   const userRoi = userStake > 0 ? roundUnits((userProfit / userStake) * 100) : 0;
   const slipModeLabel = dailySlip.mode === "combined" ? "Combinada" : "Multiplas";
   const slipStake = dailySlip.mode === "combined" ? dailySlip.combinedStake : multiplesStake;
+  const [selectedFinalPickId, setSelectedFinalPickId] = useState(finalPicks[0]?.id ?? "");
+  const selectedFinalPick = finalPicks.find((pick) => pick.id === selectedFinalPickId) ?? finalPicks[0];
+  const selectedFinalMatch = selectedFinalPick ? matches.find((match) => match.id === selectedFinalPick.matchId) : undefined;
+  const selectedFinalAuthor = selectedFinalPick ? userById(selectedFinalPick.userId) : undefined;
 
   return (
     <section className="viewer-bets-page">
@@ -820,6 +864,28 @@ function ViewerBetsPage({
           <span>Estado <b>{isPublished ? statusLabel(dailySlip.mode === "combined" ? dailySlip.settlementStatus : "pending") : "Draft"}</b></span>
         </div>
         <div className="viewer-final-list">
+          {isPublished ? (
+            <label className="viewer-final-dropdown">
+              Jogos escolhidos pelo streamer
+              <select value={selectedFinalPick?.id ?? ""} onChange={(event) => setSelectedFinalPickId(event.target.value)}>
+                {finalPicks.map((pick, index) => {
+                  const match = matches.find((item) => item.id === pick.matchId);
+                  return (
+                    <option key={pick.id} value={pick.id}>
+                      {index + 1}. {match ? `${match.homeTeam} vs ${match.awayTeam}` : pick.selection}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          ) : null}
+          {selectedFinalPick ? (
+            <article className="viewer-final-card">
+              <strong>{selectedFinalPick.selection}</strong>
+              <span>{selectedFinalMatch ? `${selectedFinalMatch.homeTeam} vs ${selectedFinalMatch.awayTeam}` : "Jogo indisponivel"}</span>
+              <small>{selectedFinalAuthor?.displayName} - @{selectedFinalPick.odds.toFixed(2)} - Score {scorePick(selectedFinalPick.id, votes)}</small>
+            </article>
+          ) : null}
           {userFinalPicks.map((pick) => {
             const match = matches.find((item) => item.id === pick.matchId);
             return (
@@ -918,7 +984,7 @@ function TipForm({
           <input placeholder="Bookmaker" value={formState.bookmaker} onChange={(event) => onChange((state) => ({ ...state, bookmaker: event.target.value }))} />
         </label>
         <label className="reason-field">
-          Argumento
+          Argumento opcional
           <textarea placeholder="Porque é que a comunidade deve confiar nesta pick?" value={formState.reason} onChange={(event) => onChange((state) => ({ ...state, reason: event.target.value }))} />
         </label>
         <button type="submit" disabled={!selectedMatch}>Submeter tip</button>
@@ -1195,6 +1261,9 @@ function StatsPage({
   profitTimeline: Array<{ label: string; profit: number; cumulative: number }>;
   leaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
 }) {
+  const giveawayLeader = leaderboard[0];
+  const eligibleViewers = leaderboard.filter((row) => row.picks > 0).length;
+
   return (
     <section className="stats-page">
       <section className="panel stats-hero-panel">
@@ -1206,6 +1275,29 @@ function StatsPage({
           <span>ROI <b>{dailyStats.total.roi.toFixed(1)}%</b></span>
         </div>
         <ProfitChart points={profitTimeline} />
+      </section>
+
+      <section className="panel giveaway-panel">
+        <div className="section-title spread">
+          <div><Trophy size={18} /><h3>Giveaway do dia</h3></div>
+          <span>{eligibleViewers} elegiveis</span>
+        </div>
+        {giveawayLeader ? (
+          <div className="giveaway-leader">
+            <span className="giveaway-rank">1</span>
+            <Avatar user={giveawayLeader.user} />
+            <div>
+              <strong>{giveawayLeader.user.displayName}</strong>
+              <small>1.º lugar por lucro fechado no fim do dia</small>
+            </div>
+            <b>{giveawayLeader.profit >= 0 ? "+" : ""}{giveawayLeader.profit.toFixed(2)}u</b>
+          </div>
+        ) : null}
+        <div className="giveaway-rules">
+          <span>Minimo <b>1 tip final resolvida</b></span>
+          <span>Desempate <b>ROI, depois winrate</b></span>
+          <span>Premio <b>Badge + giveaway em stream</b></span>
+        </div>
       </section>
 
       <section className="panel stats-table-panel">

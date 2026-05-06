@@ -736,6 +736,26 @@ h1 {
   gap: 10px;
 }
 
+.viewer-final-dropdown {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.74rem;
+  font-weight: 900;
+  gap: 6px;
+  text-transform: uppercase;
+}
+
+.viewer-final-dropdown select {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  min-height: 42px;
+  outline: none;
+  padding: 0.72rem 0.8rem;
+  width: 100%;
+}
+
 .viewer-final-card,
 .viewer-history-row {
   background: #07150e;
@@ -771,6 +791,72 @@ h1 {
 
 .viewer-history-row b {
   color: var(--green);
+}
+
+.giveaway-panel {
+  align-self: start;
+  min-width: 0;
+}
+
+.giveaway-leader {
+  align-items: center;
+  background:
+    linear-gradient(120deg, rgba(183, 255, 52, 0.16), rgba(22, 215, 130, 0.08)),
+    #07150e;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 34px 34px 1fr auto;
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.giveaway-rank {
+  align-items: center;
+  background: var(--lime);
+  border-radius: 8px;
+  color: #06130d;
+  display: inline-flex;
+  font-weight: 950;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.giveaway-leader strong {
+  color: var(--text);
+}
+
+.giveaway-leader small {
+  color: var(--muted);
+  display: block;
+  margin-top: 3px;
+}
+
+.giveaway-leader b {
+  color: var(--lime);
+  font-size: 1.15rem;
+}
+
+.giveaway-rules {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr;
+}
+
+.giveaway-rules span {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 10px;
+}
+
+.giveaway-rules b {
+  color: var(--text);
+  display: block;
+  margin-top: 3px;
 }
 
 .stats-hero-panel,
@@ -1603,6 +1689,46 @@ h1 {
   justify-content: center;
   padding: 20px 0 4px;
   text-align: center;
+}
+
+.popup-backdrop {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.62);
+  display: grid;
+  inset: 0;
+  padding: 20px;
+  place-items: center;
+  position: fixed;
+  z-index: 50;
+}
+
+.popup-card {
+  align-items: center;
+  background: #07150e;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 48px 1fr auto;
+  max-width: 620px;
+  padding: 16px;
+  width: 100%;
+}
+
+.popup-card h3 {
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.popup-card p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.popup-card button {
+  background: var(--lime);
+  color: #06130d;
 }
 
 @media (max-width: 1220px) {
