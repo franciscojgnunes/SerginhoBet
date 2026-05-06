@@ -6,7 +6,9 @@ import {
   buildProfitTimeline,
   calculateBankroll,
   calculateProfit,
+  cleanCompetitionName,
   filterMatchesForDay,
+  filterUpcomingScheduledMatches,
   scorePick,
   selectSlipPicks
 } from "./domain";
@@ -151,6 +153,22 @@ describe("PickRoom domain logic", () => {
     ];
 
     expect(filterMatchesForDay(matches, "2026-05-05").map((match) => match.id)).toEqual(["today"]);
+  });
+
+  it("keeps only scheduled matches that have not started yet", () => {
+    const matches: Match[] = [
+      { id: "future", competition: "Liga", homeTeam: "A", awayTeam: "B", startsAt: "2026-05-05T20:00:00Z", status: "scheduled" },
+      { id: "live", competition: "Liga", homeTeam: "C", awayTeam: "D", startsAt: "2026-05-05T18:00:00Z", status: "live" },
+      { id: "past", competition: "Liga", homeTeam: "E", awayTeam: "F", startsAt: "2026-05-05T16:00:00Z", status: "scheduled" }
+    ];
+
+    expect(filterUpcomingScheduledMatches(matches, new Date("2026-05-05T18:30:00Z")).map((match) => match.id)).toEqual(["future"]);
+  });
+
+  it("cleans long provider competition names", () => {
+    expect(cleanCompetitionName("Czech National Football League")).toBe("Chéquia 2ª Liga");
+    expect(cleanCompetitionName("  UEFA Champions League  ")).toBe("Champions League");
+    expect(cleanCompetitionName("rsa.1")).toBe("RSA Premiership");
   });
 
   it("calculates daily totals and per-viewer stats for streamer decisions", () => {

@@ -70,6 +70,82 @@ export function filterMatchesForDay(matches: Match[], day: string) {
   return matches.filter((match) => match.startsAt.slice(0, 10) === day);
 }
 
+export function filterUpcomingScheduledMatches(matches: Match[], now = new Date()) {
+  return matches.filter((match) => match.status === "scheduled" && new Date(match.startsAt).getTime() > now.getTime());
+}
+
+const competitionNameMap: Record<string, string> = {
+  "Austrian Regionalliga Ost": "Áustria Regionalliga Ost",
+  "Chinese Super League": "China Super League",
+  "Czech National Football League": "Chéquia 2ª Liga",
+  "Indian Super League": "Índia Super League",
+  "Saudi Pro League": "Saudi Pro League",
+  "South African First Division": "África do Sul 2ª Liga",
+  "South African Premiership": "RSA Premiership",
+  "UEFA Champions League": "Champions League",
+  "USL Championship": "USL Championship",
+  "arg.1": "Argentina Liga Profesional",
+  "arg.2": "Argentina 2ª Liga",
+  "aut.1": "Áustria Bundesliga",
+  "bel.1": "Bélgica Pro League",
+  "bra.1": "Brasil Série A",
+  "chi.1": "Chile Primera División",
+  "chn.1": "China Super League",
+  "col.1": "Colômbia Primera A",
+  "cze.1": "Chéquia 1ª Liga",
+  "cze.2": "Chéquia 2ª Liga",
+  "den.1": "Dinamarca Superliga",
+  "ecu.1": "Equador LigaPro",
+  "eng.1": "Premier League",
+  "eng.2": "Championship",
+  "eng.3": "League One",
+  "eng.4": "League Two",
+  "esp.1": "LaLiga",
+  "esp.2": "LaLiga 2",
+  "fin.1": "Finlândia Veikkausliiga",
+  "fra.1": "Ligue 1",
+  "fra.2": "Ligue 2",
+  "ger.1": "Bundesliga",
+  "ger.2": "2. Bundesliga",
+  "gre.1": "Grécia Super League",
+  "idn.1": "Indonésia Liga 1",
+  "ind.1": "Índia Super League",
+  "ita.1": "Serie A",
+  "ita.2": "Serie B",
+  "jpn.1": "J1 League",
+  "kor.1": "K League 1",
+  "ksa.1": "Saudi Pro League",
+  "mex.1": "Liga MX",
+  "ned.1": "Eredivisie",
+  "ned.2": "Eerste Divisie",
+  "nor.1": "Noruega Eliteserien",
+  "per.1": "Peru Liga 1",
+  "pol.1": "Polónia Ekstraklasa",
+  "por.1": "Liga Portugal",
+  "por.2": "Liga Portugal 2",
+  "qat.1": "Qatar Stars League",
+  "rou.1": "Roménia SuperLiga",
+  "rsa.1": "RSA Premiership",
+  "rsa.2": "África do Sul 2ª Liga",
+  "sco.1": "Escócia Premiership",
+  "sui.1": "Suíça Super League",
+  "swe.1": "Suécia Allsvenskan",
+  "tur.1": "Turquia Süper Lig",
+  "uae.1": "EAU Pro League",
+  "uefa.champions": "Champions League",
+  "uefa.europa": "Europa League",
+  "uefa.europa.conf": "Conference League",
+  "uru.1": "Uruguai Primera",
+  "usa.1": "MLS",
+  "usa.nwsl": "NWSL",
+  "usa.usl.1": "USL Championship"
+};
+
+export function cleanCompetitionName(name: string) {
+  const normalized = name.replace(/\s+/g, " ").trim();
+  return competitionNameMap[normalized] ?? normalized.replace(/^English /, "").replace(/^Spanish /, "").replace(/^German /, "");
+}
+
 export function calculateDailyStats(picks: Pick[], slipPickIds: string[], day: string) {
   const dayPicks = picks.filter((pick) => pick.createdAt.slice(0, 10) === day);
   const selectedDayPicks = dayPicks.filter((pick) => slipPickIds.includes(pick.id));

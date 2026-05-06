@@ -442,6 +442,18 @@ h1 {
   justify-content: flex-end;
 }
 
+.games-actions select {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 850;
+  min-height: 36px;
+  outline: none;
+  padding: 0 0.75rem;
+}
+
 .games-actions button {
   min-height: 36px;
 }
@@ -460,6 +472,7 @@ h1 {
 .games-grid {
   display: grid;
   gap: 12px;
+  grid-auto-rows: 1fr;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -470,7 +483,8 @@ h1 {
   color: var(--text);
   display: grid;
   gap: 12px;
-  height: auto;
+  grid-template-rows: auto 1fr auto;
+  min-height: 152px;
   padding: 14px;
   text-align: center;
 }
@@ -495,6 +509,7 @@ h1 {
   display: grid;
   gap: 14px;
   grid-template-columns: minmax(0, 1fr) 42px minmax(0, 1fr);
+  min-height: 82px;
   width: 100%;
 }
 
@@ -512,8 +527,13 @@ h1 {
 }
 
 .team-side strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   line-height: 1.18;
   min-width: 0;
+  min-height: 2.36em;
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 
@@ -554,6 +574,7 @@ h1 {
 .game-card small {
   color: var(--muted);
   line-height: 1.3;
+  min-height: 1.3em;
   text-align: center;
 }
 

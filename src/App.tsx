@@ -22,6 +22,7 @@ import {
   calculateBankroll,
   calculateDailyStats,
   calculateProfit,
+  filterUpcomingScheduledMatches,
   scorePick,
   selectSlipPicks
 } from "./domain";
@@ -121,6 +122,7 @@ export function App() {
     generatedAt: currentDate.toISOString()
   });
   const [activePage, setActivePage] = useState<Page>("games");
+  const [competitionFilter, setCompetitionFilter] = useState("all");
   const [formState, setFormState] = useState({
     marketType: "1X2" as MarketType,
     selection: "",
@@ -138,7 +140,7 @@ export function App() {
     setMatchSync("loading");
     try {
       const todayMatches = await fetchTodayMatches(currentDate);
-      const upcomingMatches = todayMatches.filter((match) => match.status === "scheduled" && new Date(match.startsAt).getTime() > Date.now());
+      const upcomingMatches = filterUpcomingScheduledMatches(todayMatches);
       setMatches(todayMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
       setMatchSync(todayMatches.length > 0 ? "live" : "empty");
@@ -157,8 +159,27 @@ export function App() {
 
   const activeUser = userById(activeUserId);
   const isStreamer = activeUser.role === "streamer";
-  const scheduledMatches = matches.filter((match) => match.status === "scheduled" && new Date(match.startsAt).getTime() > Date.now());
-  const selectedMatch = scheduledMatches.find((match) => match.id === selectedMatchId) ?? scheduledMatches[0];
+  const scheduledMatches = useMemo(() => filterUpcomingScheduledMatches(matches), [matches]);
+  const competitionOptions = useMemo(
+    () => ["all", ...Array.from(new Set(scheduledMatches.map((match) => match.competition))).sort((a, b) => a.localeCompare(b))],
+    [scheduledMatches]
+  );
+  const visibleMatches = useMemo(
+    () => (competitionFilter === "all" ? scheduledMatches : scheduledMatches.filter((match) => match.competition === competitionFilter)),
+    [competitionFilter, scheduledMatches]
+  );
+
+  useEffect(() => {
+    if (visibleMatches.length === 0) {
+      setSelectedMatchId("");
+      return;
+    }
+    if (!visibleMatches.some((match) => match.id === selectedMatchId)) {
+      setSelectedMatchId(visibleMatches[0].id);
+    }
+  }, [selectedMatchId, visibleMatches]);
+
+  const selectedMatch = visibleMatches.find((match) => match.id === selectedMatchId) ?? visibleMatches[0];
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
   const communityPicks = [...picks].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   const pendingPicks = picks.filter((pick) => pick.status === "pending");
@@ -368,10 +389,17 @@ export function App() {
             <div className="section-title spread games-toolbar">
               <div><CalendarDays size={18} /><h3>Jogos de hoje</h3></div>
               <div className="games-actions">
+                <select value={competitionFilter} onChange={(event) => setCompetitionFilter(event.target.value)} aria-label="Filtrar competição">
+                  {competitionOptions.map((competition) => (
+                    <option key={competition} value={competition}>
+                      {competition === "all" ? "Todas as competições" : competition}
+                    </option>
+                  ))}
+                </select>
                 <span className={`sync-chip ${matchSync}`}>
                   <RefreshCw size={15} />
                   {matchSync === "loading" ? "A sincronizar" : null}
-                  {matchSync === "live" ? `${scheduledMatches.length} jogos via API` : null}
+                  {matchSync === "live" ? `${visibleMatches.length}/${scheduledMatches.length} jogos` : null}
                   {matchSync === "empty" ? "Sem jogos reais hoje" : null}
                   {matchSync === "fallback" ? "APIs indisponíveis" : null}
                 </span>
@@ -388,7 +416,7 @@ export function App() {
               </div>
             </div>
             <div className="games-grid">
-              {scheduledMatches.map((match) => (
+              {visibleMatches.map((match) => (
                 <button
                   className={`game-card ${match.id === selectedMatch?.id ? "selected" : ""}`}
                   key={match.id}
@@ -406,8 +434,8 @@ export function App() {
                 </button>
               ))}
             </div>
-            {scheduledMatches.length === 0 ? (
-              <p className="empty-copy">Não há jogos agendados que ainda não tenham começado hoje. Assim que a API tiver pré-jogo, aparecem aqui.</p>
+            {visibleMatches.length === 0 ? (
+              <p className="empty-copy">Não há jogos agendados que ainda não tenham começado neste filtro. Muda a competição ou atualiza a lista.</p>
             ) : null}
           </section>
 

@@ -1,4 +1,4 @@
-import { buildMatchSlate, filterMatchesForDay } from "./domain";
+import { buildMatchSlate, cleanCompetitionName, filterMatchesForDay } from "./domain";
 import type { Match, MatchStatus } from "./types";
 
 const espnSoccerLeagues = [
@@ -10,16 +10,25 @@ const espnSoccerLeagues = [
   "caf.champions",
   "eng.1",
   "eng.2",
+  "eng.3",
+  "eng.4",
   "esp.1",
+  "esp.2",
   "ita.1",
+  "ita.2",
   "ger.1",
+  "ger.2",
   "fra.1",
+  "fra.2",
   "por.1",
+  "por.2",
   "ned.1",
+  "ned.2",
   "bra.1",
   "usa.1",
   "mex.1",
   "arg.1",
+  "arg.2",
   "sco.1",
   "bel.1",
   "tur.1",
@@ -32,6 +41,7 @@ const espnSoccerLeagues = [
   "fin.1",
   "pol.1",
   "cze.1",
+  "cze.2",
   "cro.1",
   "rou.1",
   "chn.1",
@@ -44,6 +54,9 @@ const espnSoccerLeagues = [
   "qat.1",
   "uae.1",
   "rsa.1",
+  "rsa.2",
+  "usa.nwsl",
+  "usa.usl.1",
   "col.1",
   "chi.1",
   "per.1",
@@ -151,7 +164,7 @@ function mapSportsDbEvent(event: SportsDbEvent): Match {
 
   return {
     id: `sportsdb-${event.idEvent}`,
-    competition: event.strLeague,
+    competition: cleanCompetitionName(event.strLeague),
     country: event.strCountry ?? undefined,
     homeTeam: event.strHomeTeam,
     awayTeam: event.strAwayTeam,
@@ -175,7 +188,7 @@ function mapEspnEvent(event: EspnEvent, leagueSlug: string): Match {
 
   return {
     id: `espn-${leagueSlug}-${event.id}`,
-    competition: event.league?.name ?? event.league?.abbreviation ?? leagueSlug,
+    competition: cleanCompetitionName(event.league?.name ?? event.league?.abbreviation ?? leagueSlug),
     homeTeam: home?.team.displayName ?? home?.team.shortDisplayName ?? event.name.split(" at ")[1] ?? "Home",
     awayTeam: away?.team.displayName ?? away?.team.shortDisplayName ?? event.name.split(" at ")[0] ?? "Away",
     startsAt: event.date,
