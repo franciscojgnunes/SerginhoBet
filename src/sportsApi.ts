@@ -1,4 +1,4 @@
-import { buildMatchSlate, cleanCompetitionName, filterMatchesForDay, getLocalDateKey } from "./domain";
+import { buildMatchSlate, cleanCompetitionName, filterMatchesForDay, filterUpcomingScheduledMatches, getLocalDateKey } from "./domain";
 import type { Match, MatchStatus } from "./types";
 
 const espnSoccerLeagues = [
@@ -159,18 +159,27 @@ type EspnEvent = {
 type EspnCompetition = NonNullable<EspnEvent["competitions"]>[number];
 type EspnCompetitor = NonNullable<EspnCompetition["competitors"]>[number];
 
-export async function fetchTodayMatches(date = new Date()) {
+const dayRequestCache = new Map<string, Promise<Match[]>>();
+
+export async function fetchTodayMatches(date = new Date(), options: { forceRefresh?: boolean } = {}) {
   const day = getLocalDateKey(date);
+  if (!options.forceRefresh && dayRequestCache.has(day)) return dayRequestCache.get(day)!;
+
+  const request = fetchMatchesForDay(day, date);
+  dayRequestCache.set(day, request);
+  return request;
+}
+
+async function fetchMatchesForDay(day: string, now: Date) {
   const apiFootballMatches = await fetchApiFootballMatches(day);
-  if (apiFootballMatches.length > 0) {
-    return filterMatchesForDay(apiFootballMatches, day).sort(
-      (left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()
-    );
-  }
+  if (apiFootballMatches.length > 0) return sortUpcomingMatches(apiFootballMatches, day, now);
 
   const [espnMatches, sportsDbMatches] = await Promise.all([fetchEspnMatches(day), fetchSportsDbMatches(day)]);
+  return sortUpcomingMatches(buildMatchSlate(espnMatches, sportsDbMatches), day, now);
+}
 
-  return filterMatchesForDay(buildMatchSlate(espnMatches, sportsDbMatches), day).sort(
+function sortUpcomingMatches(matches: Match[], day: string, now: Date) {
+  return filterUpcomingScheduledMatches(filterMatchesForDay(matches, day), now).sort(
     (left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()
   );
 }
@@ -180,7 +189,7 @@ async function fetchApiFootballMatches(day: string) {
   if (!apiKey) return [];
 
   try {
-    const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${day}&timezone=Europe/Lisbon`, {
+    const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${day}&timezone=Europe/Lisbon&status=NS-TBD`, {
       headers: {
         "x-apisports-key": apiKey
       }

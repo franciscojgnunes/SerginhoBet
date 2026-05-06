@@ -34,7 +34,8 @@ import type { DailySlip, MarketType, Match, Pick, PickStatus, User, Vote as Vote
 const currentDate = new Date();
 const tipDay = getLocalDateKey(currentDate);
 const communityInitialBankroll = 100;
-const matchesCacheKey = `pickroom:matches:${tipDay}`;
+const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
+const matchesCacheKey = `pickroom:matches:${tipDay}:${hasApiFootballKey ? "api-football-v2" : "free-v1"}`;
 const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
 const slipCacheKey = `pickroom:slip:${tipDay}`;
@@ -183,10 +184,10 @@ export function App() {
   useEffect(() => writeStoredValue(votesCacheKey, votes), [votes]);
   useEffect(() => writeStoredValue(slipCacheKey, dailySlip), [dailySlip]);
 
-  async function syncTodayMatches() {
+  async function syncTodayMatches(forceRefresh = false) {
     setMatchSync("loading");
     const cachedMatches = readStoredValue<Match[]>(matchesCacheKey, []);
-    if (cachedMatches.length > 0) {
+    if (!forceRefresh && cachedMatches.length > 0) {
       const upcomingMatches = filterUpcomingScheduledMatches(cachedMatches);
       setMatches(cachedMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
@@ -196,7 +197,7 @@ export function App() {
     }
 
     try {
-      const todayMatches = await fetchTodayMatches(currentDate);
+      const todayMatches = await fetchTodayMatches(currentDate, { forceRefresh });
       const upcomingMatches = filterUpcomingScheduledMatches(todayMatches);
       setMatches(todayMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
@@ -568,7 +569,7 @@ export function App() {
                     Publicar finais
                   </button>
                 ) : null}
-                <button className="ghost" onClick={syncTodayMatches}>
+                <button className="ghost" onClick={() => syncTodayMatches(true)}>
                   <RefreshCw size={16} />
                   Atualizar
                 </button>
