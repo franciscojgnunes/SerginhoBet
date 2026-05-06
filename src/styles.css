@@ -671,6 +671,108 @@ h1 {
   grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.85fr);
 }
 
+.viewer-bets-page {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  margin: 0 auto;
+  max-width: 1280px;
+}
+
+.viewer-slip-panel,
+.viewer-history-panel {
+  align-self: start;
+  min-width: 0;
+}
+
+.viewer-slip-state {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 14px;
+}
+
+.viewer-slip-state.published {
+  border-color: var(--line-strong);
+  box-shadow: inset 4px 0 0 var(--lime);
+}
+
+.viewer-slip-state strong {
+  color: var(--text);
+}
+
+.viewer-slip-state p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.viewer-slip-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.viewer-slip-metrics span {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 10px;
+}
+
+.viewer-slip-metrics b {
+  color: var(--lime);
+  display: block;
+  margin-top: 4px;
+}
+
+.viewer-final-list,
+.viewer-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.viewer-final-card,
+.viewer-history-row {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.viewer-final-card strong,
+.viewer-history-row strong {
+  color: var(--text);
+}
+
+.viewer-final-card span,
+.viewer-history-row span,
+.viewer-final-card small,
+.viewer-history-row small {
+  color: var(--muted);
+  display: block;
+  margin-top: 4px;
+}
+
+.viewer-history-row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(150px, 0.9fr) auto auto;
+}
+
+.viewer-history-row.selected {
+  border-color: var(--lime);
+}
+
+.viewer-history-row b {
+  color: var(--green);
+}
+
 .stats-hero-panel,
 .stats-table-panel {
   align-self: start;
@@ -1538,6 +1640,7 @@ h1 {
   .workspace,
   .games-grid,
   .stats-page,
+  .viewer-bets-page,
   .side-column {
     grid-template-columns: 1fr;
   }
@@ -1580,6 +1683,14 @@ h1 {
 
   .viewer-stat-row {
     grid-template-columns: 34px 1fr;
+  }
+
+  .viewer-slip-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .viewer-history-row {
+    grid-template-columns: 1fr;
   }
 
   .viewer-stat-row b,
@@ -1643,7 +1754,8 @@ h1 {
   }
 
   .detail-facts,
-  .stat-grid.wide {
+  .stat-grid.wide,
+  .viewer-slip-metrics {
     grid-template-columns: 1fr;
   }
 

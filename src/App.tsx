@@ -68,7 +68,7 @@ const marketPlaceholders: Record<MarketType, string> = {
   Outro: "Escreve o mercado"
 };
 
-type Page = "games" | "community" | "resolve" | "stats";
+type Page = "games" | "community" | "viewer" | "resolve" | "stats";
 
 function createDefaultDailySlip(): DailySlip {
   return {
@@ -529,6 +529,7 @@ export function App() {
           <div className="page-tabs">
             <button className={activePage === "games" ? "active" : ""} onClick={() => setActivePage("games")}>Jogos</button>
             <button className={activePage === "community" ? "active" : ""} onClick={() => setActivePage("community")}>Comunidade</button>
+            {!isStreamer ? <button className={activePage === "viewer" ? "active" : ""} onClick={() => setActivePage("viewer")}>Minhas apostas</button> : null}
             {isStreamer ? <button className={activePage === "resolve" ? "active" : ""} onClick={() => setActivePage("resolve")}>Resolver</button> : null}
             <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
           </div>
@@ -722,6 +723,19 @@ export function App() {
         </section>
       ) : null}
 
+      {activePage === "viewer" && !isStreamer ? (
+        <ViewerBetsPage
+          user={activeUser}
+          picks={picks.filter((pick) => pick.userId === activeUserId)}
+          finalPicks={topSlipPicks}
+          matches={matches}
+          dailySlip={dailySlip}
+          combinedOdds={combinedOdds}
+          multiplesStake={multiplesStake}
+          votes={votes}
+        />
+      ) : null}
+
       {activePage === "resolve" && isStreamer ? (
         <ResolvePage
           dailySlip={dailySlip}
@@ -742,6 +756,122 @@ export function App() {
         Unidades fictícias. Sem dinheiro real, depósitos, cashout ou execução de apostas.
       </footer>
     </main>
+  );
+}
+
+function ViewerBetsPage({
+  user,
+  picks,
+  finalPicks,
+  matches,
+  dailySlip,
+  combinedOdds,
+  multiplesStake,
+  votes
+}: {
+  user: User;
+  picks: Pick[];
+  finalPicks: Pick[];
+  matches: Match[];
+  dailySlip: DailySlip;
+  combinedOdds: number;
+  multiplesStake: number;
+  votes: VoteRecord[];
+}) {
+  const finalPickIds = new Set(finalPicks.map((pick) => pick.id));
+  const userFinalPicks = finalPicks.filter((pick) => pick.userId === user.id);
+  const isPublished = dailySlip.status === "published" && finalPicks.length > 0;
+  const combinedShare = userFinalPicks.length > 0 && finalPicks.length > 0
+    ? {
+        stake: roundUnits((dailySlip.combinedStake / finalPicks.length) * userFinalPicks.length),
+        profit: roundUnits((dailySlip.profit / finalPicks.length) * userFinalPicks.length)
+      }
+    : { stake: 0, profit: 0 };
+  const userSettledPicks = picks.filter((pick) => pick.status !== "pending");
+  const userProfit = dailySlip.mode === "combined" && isPublished && dailySlip.settlementStatus !== "pending"
+    ? combinedShare.profit
+    : roundUnits(userSettledPicks.reduce((total, pick) => total + pick.profit, 0));
+  const userStake = dailySlip.mode === "combined" && isPublished && dailySlip.settlementStatus !== "pending"
+    ? combinedShare.stake
+    : roundUnits(userSettledPicks.reduce((total, pick) => total + pick.stake, 0));
+  const userRoi = userStake > 0 ? roundUnits((userProfit / userStake) * 100) : 0;
+  const slipModeLabel = dailySlip.mode === "combined" ? "Combinada" : "Multiplas";
+  const slipStake = dailySlip.mode === "combined" ? dailySlip.combinedStake : multiplesStake;
+
+  return (
+    <section className="viewer-bets-page">
+      <section className="panel viewer-slip-panel">
+        <div className="section-title spread">
+          <div><ShieldCheck size={18} /><h3>Aposta da comunidade</h3></div>
+          <span>{isPublished ? "Registada" : "Ainda nao registada"}</span>
+        </div>
+        <div className={`viewer-slip-state ${isPublished ? "published" : "draft"}`}>
+          <strong>{isPublished ? "Boletim publicado pelo SerginhoEsteves" : "O streamer ainda nao publicou a aposta final"}</strong>
+          <p>
+            {isPublished
+              ? `${slipModeLabel} com ${finalPicks.length} tips finais.`
+              : "Quando for publicado, aparece aqui o tipo de aposta, stake, odd e as tuas tips escolhidas."}
+          </p>
+        </div>
+        <div className="viewer-slip-metrics">
+          <span>Tipo <b>{slipModeLabel}</b></span>
+          <span>Stake <b>{isPublished ? `${slipStake.toFixed(2)}u` : "0.00u"}</b></span>
+          <span>Odd combinada <b>{dailySlip.mode === "combined" && isPublished ? combinedOdds.toFixed(2) : "-"}</b></span>
+          <span>Estado <b>{isPublished ? statusLabel(dailySlip.mode === "combined" ? dailySlip.settlementStatus : "pending") : "Draft"}</b></span>
+        </div>
+        <div className="viewer-final-list">
+          {userFinalPicks.map((pick) => {
+            const match = matches.find((item) => item.id === pick.matchId);
+            return (
+              <article className="viewer-final-card" key={pick.id}>
+                <strong>{pick.selection}</strong>
+                <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                <small>@{pick.odds.toFixed(2)} · Score {scorePick(pick.id, votes)}</small>
+              </article>
+            );
+          })}
+          {isPublished && userFinalPicks.length === 0 ? <p className="empty-copy">Nenhuma das tuas tips entrou na aposta final de hoje.</p> : null}
+          {!isPublished ? <p className="empty-copy">Aposta ainda por registar. Continua a submeter e votar tips na comunidade.</p> : null}
+        </div>
+      </section>
+
+      <section className="panel viewer-history-panel">
+        <div className="section-title spread">
+          <div><LineChart size={18} /><h3>O meu historico</h3></div>
+          <span>{picks.length} tips</span>
+        </div>
+        <div className="viewer-slip-metrics">
+          <span>Submetidas <b>{picks.length}</b></span>
+          <span>Nas finais <b>{picks.filter((pick) => finalPickIds.has(pick.id)).length}</b></span>
+          <span>Lucro <b>{userProfit >= 0 ? "+" : ""}{userProfit.toFixed(2)}u</b></span>
+          <span>ROI <b>{userRoi.toFixed(1)}%</b></span>
+        </div>
+        <div className="viewer-history-list">
+          {[...picks]
+            .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+            .map((pick) => {
+              const match = matches.find((item) => item.id === pick.matchId);
+              const selected = finalPickIds.has(pick.id);
+              const displayedStatus: PickStatus = dailySlip.mode === "combined" && selected && isPublished ? dailySlip.settlementStatus : pick.status;
+              const displayedProfit = dailySlip.mode === "combined" && selected && dailySlip.settlementStatus !== "pending"
+                ? roundUnits(dailySlip.profit / Math.max(finalPicks.length, 1))
+                : pick.profit;
+              return (
+                <article className={`viewer-history-row ${selected ? "selected" : ""}`} key={pick.id}>
+                  <div>
+                    <strong>{pick.selection}</strong>
+                    <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                  </div>
+                  <small>{pick.marketType} · @{pick.odds.toFixed(2)} · Score {scorePick(pick.id, votes)}</small>
+                  <div className={`status ${displayedStatus}`}>{selected ? "Final" : statusLabel(displayedStatus)}</div>
+                  <b>{displayedProfit >= 0 ? "+" : ""}{displayedProfit.toFixed(2)}u</b>
+                </article>
+              );
+            })}
+          {picks.length === 0 ? <p className="empty-copy">Ainda nao submeteste tips hoje. Vai aos Jogos e escolhe uma partida.</p> : null}
+        </div>
+      </section>
+    </section>
   );
 }
 
