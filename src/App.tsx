@@ -108,6 +108,7 @@ function TeamLogo({ src, name }: { src?: string; name: string }) {
 }
 
 export function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeUserId, setActiveUserId] = useState("u-serginho");
   const [matches, setMatches] = useState<Match[]>(fallbackMatches);
   const [selectedMatchId, setSelectedMatchId] = useState("");
@@ -137,10 +138,11 @@ export function App() {
     setMatchSync("loading");
     try {
       const todayMatches = await fetchTodayMatches(currentDate);
+      const upcomingMatches = todayMatches.filter((match) => match.status === "scheduled" && new Date(match.startsAt).getTime() > Date.now());
       setMatches(todayMatches);
-      setSelectedMatchId(todayMatches.find((match) => match.status !== "finished")?.id ?? "");
+      setSelectedMatchId(upcomingMatches[0]?.id ?? "");
       setMatchSync(todayMatches.length > 0 ? "live" : "empty");
-      setPicks(createStarterPicks(todayMatches.filter((match) => match.status !== "finished")));
+      setPicks(createStarterPicks(upcomingMatches));
       setVotes([]);
       setDailySlip({ status: "draft", pickIds: [], generatedAt: new Date().toISOString() });
     } catch {
@@ -155,8 +157,8 @@ export function App() {
 
   const activeUser = userById(activeUserId);
   const isStreamer = activeUser.role === "streamer";
-  const openMatches = matches.filter((match) => match.status !== "finished");
-  const selectedMatch = openMatches.find((match) => match.id === selectedMatchId) ?? openMatches[0];
+  const scheduledMatches = matches.filter((match) => match.status === "scheduled" && new Date(match.startsAt).getTime() > Date.now());
+  const selectedMatch = scheduledMatches.find((match) => match.id === selectedMatchId) ?? scheduledMatches[0];
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
   const communityPicks = [...picks].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   const pendingPicks = picks.filter((pick) => pick.status === "pending");
@@ -248,6 +250,11 @@ export function App() {
     );
   }
 
+  function loginAs(role: "viewer" | "streamer") {
+    setActiveUserId(role === "streamer" ? "u-serginho" : "u-xico");
+    setIsLoggedIn(true);
+  }
+
   function renderPickCard(pick: Pick) {
     const author = userById(pick.userId);
     const match = matches.find((item) => item.id === pick.matchId);
@@ -301,6 +308,30 @@ export function App() {
     );
   }
 
+  if (!isLoggedIn) {
+    return (
+      <main className="login-screen">
+        <section className="login-hero">
+          <div className="brand-mark large">
+            <Trophy size={34} />
+          </div>
+          <h1>PickRoom SerginhoEsteves</h1>
+          <p>Entra como viewer para sugerir e votar tips, ou como streamer para gerir as escolhas finais.</p>
+          <div className="login-choice-grid">
+            <button onClick={() => loginAs("viewer")}>
+              <UserRound size={22} />
+              Entrar como Viewer
+            </button>
+            <button className="streamer-login" onClick={() => loginAs("streamer")}>
+              <ShieldCheck size={22} />
+              Entrar como Streamer
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -322,11 +353,12 @@ export function App() {
           </div>
           <LogIn size={18} />
           <select value={activeUserId} onChange={(event) => setActiveUserId(event.target.value)}>
-            {users.map((user) => (
+            {users.filter((user) => (isStreamer ? user.role === "streamer" : user.role !== "streamer")).map((user) => (
               <option key={user.id} value={user.id}>{user.displayName}</option>
             ))}
           </select>
           <span className="role-pill">{activeUser.role}</span>
+          <button className="logout-button" onClick={() => setIsLoggedIn(false)}>Sair</button>
         </div>
       </header>
 
@@ -339,7 +371,7 @@ export function App() {
                 <span className={`sync-chip ${matchSync}`}>
                   <RefreshCw size={15} />
                   {matchSync === "loading" ? "A sincronizar" : null}
-                  {matchSync === "live" ? `${openMatches.length} jogos via API` : null}
+                  {matchSync === "live" ? `${scheduledMatches.length} jogos via API` : null}
                   {matchSync === "empty" ? "Sem jogos reais hoje" : null}
                   {matchSync === "fallback" ? "APIs indisponíveis" : null}
                 </span>
@@ -356,7 +388,7 @@ export function App() {
               </div>
             </div>
             <div className="games-grid">
-              {openMatches.map((match) => (
+              {scheduledMatches.map((match) => (
                 <button
                   className={`game-card ${match.id === selectedMatch?.id ? "selected" : ""}`}
                   key={match.id}
@@ -370,13 +402,12 @@ export function App() {
                   </div>
                   <small>
                     {formatKickoff(match.startsAt)} · {matchStatusLabel(match)}
-                    {match.homeScore !== undefined && match.awayScore !== undefined ? ` · ${match.homeScore}-${match.awayScore}` : ""}
                   </small>
                 </button>
               ))}
             </div>
-            {openMatches.length === 0 ? (
-              <p className="empty-copy">Não há jogos por terminar para hoje. Assim que a API tiver jogos abertos, aparecem aqui.</p>
+            {scheduledMatches.length === 0 ? (
+              <p className="empty-copy">Não há jogos agendados que ainda não tenham começado hoje. Assim que a API tiver pré-jogo, aparecem aqui.</p>
             ) : null}
           </section>
 
