@@ -62,7 +62,7 @@ const marketPlaceholders: Record<MarketType, string> = {
   Outro: "Escreve o mercado"
 };
 
-type Page = "games" | "community" | "stats";
+type Page = "games" | "community" | "resolve" | "stats";
 
 function formatKickoff(value: string) {
   return new Intl.DateTimeFormat("pt-PT", {
@@ -120,6 +120,7 @@ export function App() {
   const [dailySlip, setDailySlip] = useState<DailySlip>({
     status: "draft",
     mode: "combined",
+    combinedStake: 1,
     pickIds: [],
     generatedAt: currentDate.toISOString()
   });
@@ -184,14 +185,14 @@ export function App() {
   const selectedMatch = visibleMatches.find((match) => match.id === selectedMatchId) ?? visibleMatches[0];
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
   const communityPicks = [...picks].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-  const pendingPicks = picks.filter((pick) => pick.status === "pending");
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
     .filter((pick): pick is Pick => Boolean(pick));
 
   const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
   const multiplesStake = topSlipPicks.reduce((total, pick) => total + pick.stake, 0);
-  const communityBankroll = calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds);
+  const slipExposure = dailySlip.mode === "combined" && topSlipPicks.length > 0 ? dailySlip.combinedStake : multiplesStake;
+  const communityBankroll = { ...calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds), exposure: slipExposure };
   const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
   const suggestedPicks = selectSlipPicks(picks, votes, 8);
   const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
@@ -273,6 +274,11 @@ export function App() {
 
   function setSlipMode(mode: DailySlip["mode"]) {
     setDailySlip((slip) => ({ ...slip, status: "draft", mode }));
+  }
+
+  function setCombinedStake(value: number) {
+    if (!Number.isFinite(value) || value <= 0) return;
+    setDailySlip((slip) => ({ ...slip, status: "draft", combinedStake: value }));
   }
 
   function settlePick(pickId: string, status: PickStatus) {
@@ -382,6 +388,7 @@ export function App() {
           <div className="page-tabs">
             <button className={activePage === "games" ? "active" : ""} onClick={() => setActivePage("games")}>Jogos</button>
             <button className={activePage === "community" ? "active" : ""} onClick={() => setActivePage("community")}>Comunidade</button>
+            {isStreamer ? <button className={activePage === "resolve" ? "active" : ""} onClick={() => setActivePage("resolve")}>Resolver</button> : null}
             <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
           </div>
           <LogIn size={18} />
@@ -518,6 +525,18 @@ export function App() {
                     Múltiplas
                   </button>
                 </div>
+                {dailySlip.mode === "combined" ? (
+                  <label className="combined-stake-field">
+                    Stake da combinada
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={dailySlip.combinedStake}
+                      onChange={(event) => setCombinedStake(Number(event.target.value))}
+                    />
+                  </label>
+                ) : null}
                 <div className="candidate-list">
                   {suggestedPicks.map((pick) => {
                     const match = matches.find((item) => item.id === pick.matchId);
@@ -540,14 +559,18 @@ export function App() {
               picks={topSlipPicks}
               matches={matches}
               combinedOdds={combinedOdds}
+              combinedStake={dailySlip.combinedStake}
               multiplesStake={multiplesStake}
               mode={dailySlip.mode}
               status={dailySlip.status}
             />
             <BankPanel bankroll={communityBankroll} />
-            {isStreamer ? <AdminPanel pendingPicks={pendingPicks} onSettle={settlePick} /> : null}
           </aside>
         </section>
+      ) : null}
+
+      {activePage === "resolve" && isStreamer ? (
+        <ResolvePage picks={picks} matches={matches} onSettle={settlePick} />
       ) : null}
 
       {activePage === "stats" ? (
@@ -618,6 +641,7 @@ function SlipPanel({
   picks,
   matches,
   combinedOdds,
+  combinedStake,
   multiplesStake,
   mode,
   status
@@ -625,11 +649,13 @@ function SlipPanel({
   picks: Pick[];
   matches: Match[];
   combinedOdds: number;
+  combinedStake: number;
   multiplesStake: number;
   mode: DailySlip["mode"];
   status: DailySlip["status"];
 }) {
   const modeLabel = mode === "combined" ? "Combinada" : "Múltiplas";
+  const combinedReturn = combinedStake * combinedOdds;
 
   return (
     <section className="panel slip-panel">
@@ -661,9 +687,65 @@ function SlipPanel({
         {picks.length === 0 ? <p className="empty-copy">O streamer escolhe aqui as tips finais a partir dos votos.</p> : null}
       </div>
       <div className="combined-odds">
-        <span>{mode === "combined" ? "Odd combinada" : "Stake total"}</span>
-        <strong>{mode === "combined" ? (picks.length ? combinedOdds.toFixed(2) : "0.00") : `${multiplesStake.toFixed(2)}u`}</strong>
+        <span>{mode === "combined" ? "Stake combinada" : "Stake total"}</span>
+        <strong>{mode === "combined" ? `${combinedStake.toFixed(2)}u` : `${multiplesStake.toFixed(2)}u`}</strong>
       </div>
+      {mode === "combined" ? (
+        <div className="combined-odds compact">
+          <span>Odd / retorno possível</span>
+          <strong>{picks.length ? `${combinedOdds.toFixed(2)} / ${combinedReturn.toFixed(2)}u` : "0.00"}</strong>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ResolvePage({ picks, matches, onSettle }: { picks: Pick[]; matches: Match[]; onSettle: (pickId: string, status: PickStatus) => void }) {
+  const orderedPicks = [...picks].sort((left, right) => {
+    if (left.status === "pending" && right.status !== "pending") return -1;
+    if (left.status !== "pending" && right.status === "pending") return 1;
+    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+  });
+
+  return (
+    <section className="resolve-page">
+      <section className="panel resolve-panel">
+        <div className="section-title spread">
+          <div><Activity size={18} /><h3>Resolver tips</h3></div>
+          <span>{orderedPicks.filter((pick) => pick.status === "pending").length} pendentes</span>
+        </div>
+        <div className="resolve-list">
+          {orderedPicks.map((pick) => {
+            const match = matches.find((item) => item.id === pick.matchId);
+            const author = userById(pick.userId);
+            return (
+              <article className="resolve-row" key={pick.id}>
+                <div className="author">
+                  <Avatar user={author} />
+                  <div>
+                    <strong>{author.displayName}</strong>
+                    <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponível"}</span>
+                  </div>
+                </div>
+                <div>
+                  <strong>{pick.selection}</strong>
+                  <small>{pick.marketType} · @{pick.odds.toFixed(2)} · {pick.stake}u</small>
+                </div>
+                <div className={`status ${pick.status}`}>{statusLabel(pick.status)}</div>
+                <select value={pick.status} onChange={(event) => onSettle(pick.id, event.target.value as PickStatus)}>
+                  <option value="pending">Pendente</option>
+                  <option value="won">Ganha</option>
+                  <option value="lost">Perdida</option>
+                  <option value="void">Void</option>
+                  <option value="half_won">Meia ganha</option>
+                  <option value="half_lost">Meia perdida</option>
+                </select>
+              </article>
+            );
+          })}
+          {orderedPicks.length === 0 ? <p className="empty-copy">Ainda não há tips para resolver.</p> : null}
+        </div>
+      </section>
     </section>
   );
 }
@@ -675,27 +757,6 @@ function BankPanel({ bankroll }: { bankroll: ReturnType<typeof calculateBankroll
       <div className="bank-line"><span>Disponível</span><strong>{(bankroll.current - bankroll.exposure).toFixed(2)}u</strong></div>
       <div className="bank-line"><span>Exposição boletim</span><strong>{bankroll.exposure.toFixed(2)}u</strong></div>
       <div className="bank-line"><span>Lucro fechado</span><strong>{bankroll.settledProfit >= 0 ? "+" : ""}{bankroll.settledProfit.toFixed(2)}u</strong></div>
-    </section>
-  );
-}
-
-function AdminPanel({ pendingPicks, onSettle }: { pendingPicks: Pick[]; onSettle: (pickId: string, status: PickStatus) => void }) {
-  return (
-    <section className="panel admin-panel">
-      <div className="section-title"><Activity size={18} /><h3>Resolver tips</h3></div>
-      {pendingPicks.slice(0, 8).map((pick) => (
-        <div className="settle-row" key={pick.id}>
-          <span>{pick.selection}</span>
-          <select onChange={(event) => onSettle(pick.id, event.target.value as PickStatus)} defaultValue="pending">
-            <option value="pending">Pendente</option>
-            <option value="won">Ganha</option>
-            <option value="lost">Perdida</option>
-            <option value="void">Void</option>
-            <option value="half_won">Meia ganha</option>
-            <option value="half_lost">Meia perdida</option>
-          </select>
-        </div>
-      ))}
     </section>
   );
 }

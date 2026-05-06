@@ -66,6 +66,7 @@ export type Vote = {
 export type DailySlip = {
   status: "draft" | "published";
   mode: "combined" | "multiples";
+  combinedStake: number;
   pickIds: string[];
   generatedAt: string;
 };

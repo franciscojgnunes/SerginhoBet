@@ -822,6 +822,28 @@ h1 {
   color: #06130d;
 }
 
+.combined-stake-field {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.74rem;
+  font-weight: 900;
+  gap: 6px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+
+.combined-stake-field input,
+.resolve-row select {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  min-height: 40px;
+  outline: none;
+  padding: 0.65rem 0.75rem;
+  width: 100%;
+}
+
 .candidate-list {
   display: grid;
   gap: 8px;
@@ -1110,6 +1132,46 @@ h1 {
 .combined-odds strong {
   color: var(--lime);
   font-size: 1.8rem;
+}
+
+.combined-odds.compact {
+  margin-top: 8px;
+  padding-top: 10px;
+}
+
+.combined-odds.compact strong {
+  font-size: 1.05rem;
+}
+
+.resolve-page {
+  margin: 0 auto;
+  max-width: 1280px;
+}
+
+.resolve-list {
+  display: grid;
+  gap: 10px;
+}
+
+.resolve-row {
+  align-items: center;
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(240px, 1.4fr) auto 170px;
+  padding: 12px;
+}
+
+.resolve-row strong {
+  color: var(--text);
+}
+
+.resolve-row small {
+  color: var(--muted);
+  display: block;
+  margin-top: 4px;
 }
 
 .bank-mini {
@@ -1419,6 +1481,10 @@ h1 {
   }
 
   .candidate-row {
+    grid-template-columns: 1fr;
+  }
+
+  .resolve-row {
     grid-template-columns: 1fr;
   }
 
