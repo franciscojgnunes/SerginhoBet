@@ -1417,8 +1417,8 @@ h1 {
   align-items: center;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(150px, 1.4fr) repeat(6, minmax(64px, 0.7fr));
-  min-width: 760px;
+  grid-template-columns: minmax(170px, 1.6fr) repeat(6, minmax(56px, 0.7fr));
+  min-width: 0;
 }
 
 .stats-table-head {
@@ -1571,7 +1571,7 @@ h1 {
 
   .stats-table-head,
   .stats-table-row {
-    min-width: 760px;
+    min-width: 720px;
   }
 
   .pick-form {

@@ -34,6 +34,10 @@ import type { DailySlip, MarketType, Match, Pick, PickStatus, User, Vote as Vote
 const currentDate = new Date();
 const tipDay = getLocalDateKey(currentDate);
 const communityInitialBankroll = 100;
+const matchesCacheKey = `pickroom:matches:${tipDay}`;
+const picksCacheKey = `pickroom:picks:${tipDay}`;
+const votesCacheKey = `pickroom:votes:${tipDay}`;
+const slipCacheKey = `pickroom:slip:${tipDay}`;
 
 const marketOptions: MarketType[] = [
   "1X2",
@@ -64,6 +68,38 @@ const marketPlaceholders: Record<MarketType, string> = {
 };
 
 type Page = "games" | "community" | "resolve" | "stats";
+
+function createDefaultDailySlip(): DailySlip {
+  return {
+    status: "draft",
+    mode: "combined",
+    combinedStake: 1,
+    multiplesStake: 1,
+    settlementStatus: "pending",
+    profit: 0,
+    pickIds: [],
+    generatedAt: currentDate.toISOString()
+  };
+}
+
+function readStoredValue<T>(key: string, fallback: T): T {
+  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return fallback;
+    const parsed = JSON.parse(stored);
+    return Array.isArray(fallback) ? parsed : { ...fallback, ...parsed };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredValue<T>(key: string, value: T) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Local cache is a convenience; the app keeps working if storage is blocked.
+  }
+}
 
 function formatKickoff(value: string) {
   return new Intl.DateTimeFormat("pt-PT", {
@@ -113,20 +149,14 @@ function TeamLogo({ src, name }: { src?: string; name: string }) {
 export function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeUserId, setActiveUserId] = useState("u-serginho");
-  const [matches, setMatches] = useState<Match[]>(fallbackMatches);
+  const [matches, setMatches] = useState<Match[]>(() => readStoredValue<Match[]>(matchesCacheKey, fallbackMatches));
   const [selectedMatchId, setSelectedMatchId] = useState("");
-  const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty" | "fallback">("loading");
-  const [picks, setPicks] = useState<Pick[]>([]);
-  const [votes, setVotes] = useState<VoteRecord[]>([]);
-  const [dailySlip, setDailySlip] = useState<DailySlip>({
-    status: "draft",
-    mode: "combined",
-    combinedStake: 1,
-    settlementStatus: "pending",
-    profit: 0,
-    pickIds: [],
-    generatedAt: currentDate.toISOString()
-  });
+  const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty" | "fallback">(() => (
+    readStoredValue<Match[]>(matchesCacheKey, fallbackMatches).length > 0 ? "live" : "loading"
+  ));
+  const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []));
+  const [votes, setVotes] = useState<VoteRecord[]>(() => readStoredValue<VoteRecord[]>(votesCacheKey, []));
+  const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
   const [activePage, setActivePage] = useState<Page>("games");
   const [competitionFilter, setCompetitionFilter] = useState("all");
   const [formState, setFormState] = useState({
@@ -139,27 +169,43 @@ export function App() {
   });
 
   useEffect(() => {
+    if (matches.length > 0) {
+      const upcomingMatches = filterUpcomingScheduledMatches(matches);
+      setSelectedMatchId(upcomingMatches[0]?.id ?? "");
+      if (picks.length === 0) setPicks(createStarterPicks(upcomingMatches));
+      return;
+    }
     void syncTodayMatches();
   }, []);
 
+  useEffect(() => writeStoredValue(matchesCacheKey, matches), [matches]);
+  useEffect(() => writeStoredValue(picksCacheKey, picks), [picks]);
+  useEffect(() => writeStoredValue(votesCacheKey, votes), [votes]);
+  useEffect(() => writeStoredValue(slipCacheKey, dailySlip), [dailySlip]);
+
   async function syncTodayMatches() {
     setMatchSync("loading");
+    const cachedMatches = readStoredValue<Match[]>(matchesCacheKey, []);
+    if (cachedMatches.length > 0) {
+      const upcomingMatches = filterUpcomingScheduledMatches(cachedMatches);
+      setMatches(cachedMatches);
+      setSelectedMatchId(upcomingMatches[0]?.id ?? "");
+      setMatchSync("live");
+      setPicks((current) => (current.length > 0 ? current : createStarterPicks(upcomingMatches)));
+      return;
+    }
+
     try {
       const todayMatches = await fetchTodayMatches(currentDate);
       const upcomingMatches = filterUpcomingScheduledMatches(todayMatches);
       setMatches(todayMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
       setMatchSync(todayMatches.length > 0 ? "live" : "empty");
-      setPicks(createStarterPicks(upcomingMatches));
-      setVotes([]);
-      setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, pickIds: [], generatedAt: new Date().toISOString() }));
+      setPicks((current) => (current.length > 0 ? current : createStarterPicks(upcomingMatches)));
     } catch {
       setMatches(fallbackMatches);
       setSelectedMatchId("");
       setMatchSync("fallback");
-      setPicks([]);
-      setVotes([]);
-      setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, pickIds: [], generatedAt: new Date().toISOString() }));
     }
   }
 
@@ -193,7 +239,7 @@ export function App() {
     .filter((pick): pick is Pick => Boolean(pick));
 
   const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
-  const multiplesStake = topSlipPicks.reduce((total, pick) => total + pick.stake, 0);
+  const multiplesStake = topSlipPicks.length * dailySlip.multiplesStake;
   const isPublishedSlip = dailySlip.status === "published" && topSlipPicks.length > 0;
   const combinedSlipSettled = dailySlip.mode === "combined" && dailySlip.settlementStatus !== "pending";
   const slipExposure = isPublishedSlip && !combinedSlipSettled
@@ -226,7 +272,21 @@ export function App() {
           roi: dailySlip.settlementStatus !== "pending" && dailySlip.combinedStake > 0
             ? roundUnits((dailySlip.profit / dailySlip.combinedStake) * 100)
             : 0
-        }
+        },
+        byViewer: dailyStats.byViewer.map((row) => {
+          const selectedByViewer = topSlipPicks.filter((pick) => pick.userId === row.userId).length;
+          if (selectedByViewer === 0) return row;
+          const stakeShare = dailySlip.settlementStatus === "pending" ? 0 : roundUnits((dailySlip.combinedStake / topSlipPicks.length) * selectedByViewer);
+          const profitShare = dailySlip.settlementStatus === "pending" ? 0 : roundUnits((dailySlip.profit / topSlipPicks.length) * selectedByViewer);
+          return {
+            ...row,
+            settled: dailySlip.settlementStatus === "pending" ? 0 : selectedByViewer,
+            pendingSelected: dailySlip.settlementStatus === "pending" ? selectedByViewer : 0,
+            staked: stakeShare,
+            profit: profitShare,
+            roi: stakeShare > 0 ? roundUnits((profitShare / stakeShare) * 100) : 0
+          };
+        })
       }
     : dailyStats;
   const displayedProfitTimeline = dailySlip.mode === "combined" && dailySlip.status === "published" && dailySlip.settlementStatus !== "pending"
@@ -234,6 +294,21 @@ export function App() {
     : profitTimeline;
 
   const leaderboard = useMemo(() => {
+    if (dailySlip.mode === "combined" && dailySlip.status === "published") {
+      return users
+        .map((user) => {
+          const row = displayedDailyStats.byViewer.find((viewerRow) => viewerRow.userId === user.id);
+          return {
+            user,
+            picks: row?.settled ?? 0,
+            profit: row?.profit ?? 0,
+            roi: row?.roi ?? 0,
+            winrate: row && row.settled > 0 && dailySlip.settlementStatus === "won" ? 100 : 0
+          };
+        })
+        .sort((a, b) => b.profit - a.profit);
+    }
+
     return users
       .map((user) => {
         const settled = picks.filter((pick) => pick.userId === user.id && pick.status !== "pending");
@@ -249,7 +324,7 @@ export function App() {
         };
       })
       .sort((a, b) => b.profit - a.profit);
-  }, [picks]);
+  }, [dailySlip.mode, dailySlip.settlementStatus, dailySlip.status, displayedDailyStats.byViewer, picks]);
 
   function submitPick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -331,11 +406,18 @@ export function App() {
     setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, combinedStake: value }));
   }
 
+  function setMultiplesStake(value: number) {
+    if (!Number.isFinite(value) || value <= 0) return;
+    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, multiplesStake: value }));
+  }
+
   function settlePick(pickId: string, status: PickStatus) {
     setPicks((current) =>
-      current.map((pick) =>
-        pick.id === pickId ? { ...pick, status, profit: calculateProfit(status, pick.stake, pick.odds) } : pick
-      )
+      current.map((pick) => {
+        if (pick.id !== pickId) return pick;
+        const finalStake = dailySlip.mode === "multiples" && dailySlip.pickIds.includes(pickId) ? dailySlip.multiplesStake : pick.stake;
+        return { ...pick, stake: finalStake, status, profit: calculateProfit(status, finalStake, pick.odds) };
+      })
     );
   }
 
@@ -594,7 +676,18 @@ export function App() {
                       onChange={(event) => setCombinedStake(Number(event.target.value))}
                     />
                   </label>
-                ) : null}
+                ) : (
+                  <label className="combined-stake-field">
+                    Stake por múltipla
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={dailySlip.multiplesStake}
+                      onChange={(event) => setMultiplesStake(Number(event.target.value))}
+                    />
+                  </label>
+                )}
                 <div className="candidate-list">
                   {suggestedPicks.map((pick) => {
                     const match = matches.find((item) => item.id === pick.matchId);
@@ -618,6 +711,7 @@ export function App() {
               matches={matches}
               combinedOdds={combinedOdds}
               combinedStake={dailySlip.combinedStake}
+              multiplesUnitStake={dailySlip.multiplesStake}
               multiplesStake={multiplesStake}
               mode={dailySlip.mode}
               status={dailySlip.status}
@@ -707,6 +801,7 @@ function SlipPanel({
   matches,
   combinedOdds,
   combinedStake,
+  multiplesUnitStake,
   multiplesStake,
   mode,
   status
@@ -715,6 +810,7 @@ function SlipPanel({
   matches: Match[];
   combinedOdds: number;
   combinedStake: number;
+  multiplesUnitStake: number;
   multiplesStake: number;
   mode: DailySlip["mode"];
   status: DailySlip["status"];
@@ -744,6 +840,7 @@ function SlipPanel({
               <span>{index + 1}</span>
               <div>
                 <strong>{pick.selection}</strong>
+                {mode === "multiples" ? <small>Stake final: {multiplesUnitStake}u</small> : null}
                 <small>{match?.homeTeam} vs {match?.awayTeam} · @{pick.odds.toFixed(2)} · {pick.stake}u</small>
               </div>
             </div>
@@ -877,7 +974,7 @@ function ResolvePage({
                 </div>
                 <div>
                   <strong>{pick.selection}</strong>
-                  <small>{pick.marketType} - @{pick.odds.toFixed(2)} - {pick.stake}u</small>
+                  <small>{pick.marketType} - @{pick.odds.toFixed(2)} - {dailySlip.multiplesStake}u</small>
                 </div>
                 <div className={`status ${pick.status}`}>{statusLabel(pick.status)}</div>
                 <select value={pick.status} onChange={(event) => onSettlePick(pick.id, event.target.value as PickStatus)}>
