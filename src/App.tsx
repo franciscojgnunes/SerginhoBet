@@ -23,6 +23,7 @@ import {
   calculateDailyStats,
   calculateProfit,
   filterUpcomingScheduledMatches,
+  getLocalDateKey,
   scorePick,
   selectSlipPicks
 } from "./domain";
@@ -30,7 +31,7 @@ import { fetchTodayMatches } from "./sportsApi";
 import type { DailySlip, MarketType, Match, Pick, PickStatus, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
-const tipDay = currentDate.toISOString().slice(0, 10);
+const tipDay = getLocalDateKey(currentDate);
 const communityInitialBankroll = 100;
 
 const marketOptions: MarketType[] = [

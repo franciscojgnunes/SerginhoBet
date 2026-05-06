@@ -1,4 +1,4 @@
-import { buildMatchSlate, cleanCompetitionName, filterMatchesForDay } from "./domain";
+import { buildMatchSlate, cleanCompetitionName, filterMatchesForDay, getLocalDateKey } from "./domain";
 import type { Match, MatchStatus } from "./types";
 
 const espnSoccerLeagues = [
@@ -125,7 +125,7 @@ type EspnCompetition = NonNullable<EspnEvent["competitions"]>[number];
 type EspnCompetitor = NonNullable<EspnCompetition["competitors"]>[number];
 
 export async function fetchTodayMatches(date = new Date()) {
-  const day = date.toISOString().slice(0, 10);
+  const day = getLocalDateKey(date);
   const [espnMatches, sportsDbMatches] = await Promise.all([fetchEspnMatches(day), fetchSportsDbMatches(day)]);
 
   return filterMatchesForDay(buildMatchSlate(espnMatches, sportsDbMatches), day).sort(

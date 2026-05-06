@@ -67,7 +67,18 @@ export function buildMatchSlate(primaryMatches: Match[], secondaryMatches: Match
 }
 
 export function filterMatchesForDay(matches: Match[], day: string) {
-  return matches.filter((match) => match.startsAt.slice(0, 10) === day);
+  return matches.filter((match) => getLocalDateKey(new Date(match.startsAt)) === day);
+}
+
+export function getLocalDateKey(date: Date, timeZone = "Europe/Lisbon") {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 export function filterUpcomingScheduledMatches(matches: Match[], now = new Date()) {

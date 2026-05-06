@@ -9,6 +9,7 @@ import {
   cleanCompetitionName,
   filterMatchesForDay,
   filterUpcomingScheduledMatches,
+  getLocalDateKey,
   scorePick,
   selectSlipPicks
 } from "./domain";
@@ -153,6 +154,33 @@ describe("PickRoom domain logic", () => {
     ];
 
     expect(filterMatchesForDay(matches, "2026-05-05").map((match) => match.id)).toEqual(["today"]);
+  });
+
+  it("filters the match slate by Lisbon local day instead of UTC day", () => {
+    const matches: Match[] = [
+      {
+        id: "late-today",
+        competition: "Liga",
+        homeTeam: "Hoje A",
+        awayTeam: "Hoje B",
+        startsAt: "2026-05-06T22:00:00Z",
+        status: "scheduled"
+      },
+      {
+        id: "tomorrow-lisbon",
+        competition: "Liga",
+        homeTeam: "Amanha A",
+        awayTeam: "Amanha B",
+        startsAt: "2026-05-07T00:30:00Z",
+        status: "scheduled"
+      }
+    ];
+
+    expect(filterMatchesForDay(matches, "2026-05-06").map((match) => match.id)).toEqual(["late-today"]);
+  });
+
+  it("formats Lisbon local date keys", () => {
+    expect(getLocalDateKey(new Date("2026-05-07T00:30:00Z"))).toBe("2026-05-07");
   });
 
   it("keeps only scheduled matches that have not started yet", () => {
