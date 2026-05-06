@@ -837,10 +837,7 @@ function ViewerBetsPage({
   const userRoi = userStake > 0 ? roundUnits((userProfit / userStake) * 100) : 0;
   const slipModeLabel = dailySlip.mode === "combined" ? "Combinada" : "Multiplas";
   const slipStake = dailySlip.mode === "combined" ? dailySlip.combinedStake : multiplesStake;
-  const [selectedFinalPickId, setSelectedFinalPickId] = useState(finalPicks[0]?.id ?? "");
-  const selectedFinalPick = finalPicks.find((pick) => pick.id === selectedFinalPickId) ?? finalPicks[0];
-  const selectedFinalMatch = selectedFinalPick ? matches.find((match) => match.id === selectedFinalPick.matchId) : undefined;
-  const selectedFinalAuthor = selectedFinalPick ? userById(selectedFinalPick.userId) : undefined;
+  const [showFinalPicks, setShowFinalPicks] = useState(false);
 
   return (
     <section className="viewer-bets-page">
@@ -865,28 +862,28 @@ function ViewerBetsPage({
         </div>
         <div className="viewer-final-list">
           {isPublished ? (
-            <label className="viewer-final-dropdown">
-              Jogos escolhidos pelo streamer
-              <select value={selectedFinalPick?.id ?? ""} onChange={(event) => setSelectedFinalPickId(event.target.value)}>
+            <div className="viewer-final-dropdown">
+              <button className="viewer-final-toggle" onClick={() => setShowFinalPicks((current) => !current)}>
+                <span>{showFinalPicks ? "Esconder jogos do boletim" : "Ver jogos do boletim"}</span>
+                <b>{finalPicks.length}</b>
+              </button>
+              {showFinalPicks ? <div className="viewer-final-expanded">
                 {finalPicks.map((pick, index) => {
                   const match = matches.find((item) => item.id === pick.matchId);
+                  const author = userById(pick.userId);
                   return (
-                    <option key={pick.id} value={pick.id}>
-                      {index + 1}. {match ? `${match.homeTeam} vs ${match.awayTeam}` : pick.selection}
-                    </option>
+                    <article className="viewer-final-card" key={pick.id}>
+                      <small>#{index + 1} - {author.displayName}</small>
+                      <strong>{pick.selection}</strong>
+                      <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                      <small>@{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
+                    </article>
                   );
                 })}
-              </select>
-            </label>
+              </div> : null}
+            </div>
           ) : null}
-          {selectedFinalPick ? (
-            <article className="viewer-final-card">
-              <strong>{selectedFinalPick.selection}</strong>
-              <span>{selectedFinalMatch ? `${selectedFinalMatch.homeTeam} vs ${selectedFinalMatch.awayTeam}` : "Jogo indisponivel"}</span>
-              <small>{selectedFinalAuthor?.displayName} - @{selectedFinalPick.odds.toFixed(2)} - Score {scorePick(selectedFinalPick.id, votes)}</small>
-            </article>
-          ) : null}
-          {userFinalPicks.map((pick) => {
+          {false ? userFinalPicks.map((pick) => {
             const match = matches.find((item) => item.id === pick.matchId);
             return (
               <article className="viewer-final-card" key={pick.id}>
@@ -895,7 +892,7 @@ function ViewerBetsPage({
                 <small>@{pick.odds.toFixed(2)} · Score {scorePick(pick.id, votes)}</small>
               </article>
             );
-          })}
+          }) : null}
           {isPublished && userFinalPicks.length === 0 ? <p className="empty-copy">Nenhuma das tuas tips entrou na aposta final de hoje.</p> : null}
           {!isPublished ? <p className="empty-copy">Aposta ainda por registar. Continua a submeter e votar tips na comunidade.</p> : null}
         </div>

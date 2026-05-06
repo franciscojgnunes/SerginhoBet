@@ -737,23 +737,35 @@ h1 {
 }
 
 .viewer-final-dropdown {
-  color: var(--muted);
   display: grid;
-  font-size: 0.74rem;
-  font-weight: 900;
   gap: 6px;
-  text-transform: uppercase;
 }
 
-.viewer-final-dropdown select {
-  background: #07150e;
+.viewer-final-toggle {
+  background: rgba(183, 255, 52, 0.12);
   border: 1px solid var(--line);
   border-radius: 8px;
-  color: var(--text);
-  min-height: 42px;
-  outline: none;
-  padding: 0.72rem 0.8rem;
+  color: var(--lime);
+  justify-content: space-between;
   width: 100%;
+}
+
+.viewer-final-toggle b {
+  align-items: center;
+  background: var(--lime);
+  border-radius: 999px;
+  color: #06130d;
+  display: inline-flex;
+  font-size: 0.78rem;
+  height: 26px;
+  justify-content: center;
+  min-width: 26px;
+  padding: 0 8px;
+}
+
+.viewer-final-expanded {
+  display: grid;
+  gap: 10px;
 }
 
 .viewer-final-card,
