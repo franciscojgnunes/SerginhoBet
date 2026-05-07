@@ -948,7 +948,7 @@ export function App() {
             </button>
           </div>
           {!isSupabaseConfigured ? (
-            <p className="login-warning">Configura VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar o login Twitch em produção.</p>
+            <p className="login-warning">Configura NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY no Vercel para ativar o login Twitch.</p>
           ) : null}
         </section>
       </main>
