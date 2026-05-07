@@ -753,10 +753,10 @@ export function App() {
     return (
       <main className="login-screen">
         <section className="login-hero">
-          <div className="brand-mark large">
-            <Trophy size={34} />
+          <div className="brand-mark app-icon large">
+            <img src="/serginhobet-icon.svg" alt="" />
           </div>
-          <h1>PickRoom SerginhoEsteves</h1>
+          <h1>SerginhoBet</h1>
           <p>Entra como viewer para sugerir e votar tips, ou como streamer para gerir as escolhas finais.</p>
           <div className="login-choice-grid">
             <button onClick={() => loginAs("viewer")}>
@@ -777,11 +777,11 @@ export function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">
-            <Trophy size={22} />
+          <div className="brand-mark app-icon">
+            <img src="/serginhobet-icon.svg" alt="" />
           </div>
           <div>
-            <h1>PickRoom SerginhoEsteves</h1>
+            <h1>SerginhoBet</h1>
             <p>Tips de futebol por dia, comunidade Twitch e banca fictícia coletiva</p>
           </div>
         </div>

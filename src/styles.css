@@ -230,6 +230,17 @@ button:disabled {
   width: 48px;
 }
 
+.brand-mark.app-icon {
+  background: transparent;
+  overflow: hidden;
+}
+
+.brand-mark.app-icon img {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
 h1,
 h2,
 h3,
