@@ -16,7 +16,7 @@ import {
   Vote
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { fallbackMatches, users } from "./data";
+import { users } from "./data";
 import {
   buildProfitTimeline,
   calculateBankroll,
@@ -273,10 +273,10 @@ export function App() {
   const [remoteProfiles, setRemoteProfiles] = useState<User[]>([]);
   const [authStatus, setAuthStatus] = useState<SyncStatus>("loading");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
-  const [matches, setMatches] = useState<Match[]>(() => readStoredValue<Match[]>(matchesCacheKey, fallbackMatches));
+  const [matches, setMatches] = useState<Match[]>(() => readStoredValue<Match[]>(matchesCacheKey, []));
   const [selectedMatchId, setSelectedMatchId] = useState("");
-  const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty" | "fallback">(() => (
-    readStoredValue<Match[]>(matchesCacheKey, fallbackMatches).length > 0 ? "live" : "loading"
+  const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty">(() => (
+    readStoredValue<Match[]>(matchesCacheKey, []).length > 0 ? "live" : "loading"
   ));
   const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []));
   const [votes, setVotes] = useState<VoteRecord[]>(() => readStoredValue<VoteRecord[]>(votesCacheKey, []));
@@ -307,7 +307,6 @@ export function App() {
     if (matches.length > 0) {
       const upcomingMatches = filterUpcomingScheduledMatches(matches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
-      if (!isSupabaseConfigured && picks.length === 0) setPicks(createStarterPicks(upcomingMatches));
       return;
     }
     void syncTodayMatches();
@@ -440,7 +439,6 @@ export function App() {
       setMatches(cachedMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
       setMatchSync("live");
-      setPicks((current) => (current.length > 0 ? current : createStarterPicks(upcomingMatches)));
       return;
     }
 
@@ -450,11 +448,10 @@ export function App() {
       setMatches(todayMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
       setMatchSync(todayMatches.length > 0 ? "live" : "empty");
-      setPicks((current) => (current.length > 0 ? current : createStarterPicks(upcomingMatches)));
     } catch {
-      setMatches(fallbackMatches);
+      setMatches([]);
       setSelectedMatchId("");
-      setMatchSync("fallback");
+      setMatchSync("empty");
     }
   }
 
@@ -1012,7 +1009,6 @@ export function App() {
                   {matchSync === "loading" ? "A sincronizar" : null}
                   {matchSync === "live" ? `${visibleMatches.length}/${scheduledMatches.length} jogos` : null}
                   {matchSync === "empty" ? "Sem jogos reais hoje" : null}
-                  {matchSync === "fallback" ? "APIs indisponíveis" : null}
                 </span>
                 {isStreamer ? (
                   <button className="secondary" onClick={publishSlip}>
@@ -2294,56 +2290,4 @@ function ProfitChart({ points }: { points: Array<{ label: string; profit: number
       </svg>
     </div>
   );
-}
-
-function createStarterPicks(todayMatches: Match[]): Pick[] {
-  const first = todayMatches[0];
-  const second = todayMatches[1] ?? todayMatches[0];
-  const third = todayMatches[2] ?? todayMatches[0];
-  if (!first) return [];
-
-  return [
-    {
-      id: "api-p-1",
-      matchId: first.id,
-      userId: "u-xico",
-      marketType: "1X2",
-      selection: `${first.homeTeam} vence`,
-      odds: 2.1,
-      stake: 1,
-      bookmaker: "Manual",
-      reason: "Pick inicial para testar a votação da comunidade com jogos reais de hoje.",
-      status: "pending",
-      profit: 0,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: "api-p-2",
-      matchId: second.id,
-      userId: "u-bytex",
-      marketType: "Over/Under",
-      selection: "Mais de 2.5 golos",
-      odds: 1.85,
-      stake: 1,
-      bookmaker: "Manual",
-      reason: "Mercado popular para simular odds manuais enquanto a API fornece calendário e resultados.",
-      status: "pending",
-      profit: 0,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: "api-p-3",
-      matchId: third.id,
-      userId: "u-serginho",
-      marketType: "BTTS",
-      selection: "Ambas marcam: Sim",
-      odds: 1.78,
-      stake: 1,
-      bookmaker: "Manual",
-      reason: "Tip do streamer para mostrar que o SerginhoEsteves também participa no boletim.",
-      status: "pending",
-      profit: 0,
-      createdAt: new Date().toISOString()
-    }
-  ];
 }
