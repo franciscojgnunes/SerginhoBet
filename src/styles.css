@@ -480,13 +480,26 @@ h1 {
   align-items: center;
   background: #09190f;
   border: 1px solid var(--line);
+  border-radius: 8px;
   color: var(--text);
+  cursor: pointer;
   display: grid;
   gap: 12px;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr auto auto;
   min-height: 152px;
   padding: 14px;
   text-align: center;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.game-card:hover {
+  transform: translateY(-1px);
+}
+
+.game-card:focus-visible {
+  border-color: var(--lime);
+  box-shadow: 0 0 0 3px rgba(183, 255, 52, 0.14);
+  outline: none;
 }
 
 .game-card.selected {
@@ -576,6 +589,18 @@ h1 {
   line-height: 1.3;
   min-height: 1.3em;
   text-align: center;
+}
+
+.game-tip-button,
+.detail-tip-button {
+  background: var(--lime);
+  color: #06130d;
+  width: 100%;
+}
+
+.detail-tip-button {
+  margin-bottom: 14px;
+  min-height: 48px;
 }
 
 .match-detail {
@@ -685,6 +710,16 @@ h1 {
   min-width: 0;
 }
 
+.viewer-slip-panel,
+.viewer-pending-panel {
+  grid-column: 1;
+}
+
+.viewer-history-panel {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
 .viewer-slip-state {
   background: #07150e;
   border: 1px solid var(--line);
@@ -731,7 +766,8 @@ h1 {
 }
 
 .viewer-final-list,
-.viewer-history-list {
+.viewer-history-list,
+.viewer-pending-list {
   display: grid;
   gap: 10px;
 }
@@ -799,6 +835,38 @@ h1 {
 
 .viewer-history-row.selected {
   border-color: var(--lime);
+}
+
+.viewer-pending-row {
+  align-items: center;
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.viewer-pending-row strong,
+.slip-history-row strong {
+  color: var(--text);
+}
+
+.viewer-pending-row span {
+  color: var(--muted);
+  display: block;
+  margin-top: 4px;
+}
+
+.viewer-pending-row b {
+  color: var(--lime);
+}
+
+.slip-history-row {
+  background:
+    linear-gradient(120deg, rgba(183, 255, 52, 0.08), rgba(22, 215, 130, 0.05)),
+    #07150e;
 }
 
 .viewer-history-row b {
@@ -1142,6 +1210,39 @@ h1 {
 .pick-header {
   justify-content: space-between;
   gap: 12px;
+}
+
+.pick-header-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.score-badge {
+  align-items: center;
+  background: rgba(183, 255, 52, 0.14);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--lime);
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0.32rem 0.58rem;
+}
+
+.score-badge span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.score-badge strong {
+  color: var(--lime);
+  font-size: 1.2rem;
+  line-height: 1;
 }
 
 .author {
@@ -1743,6 +1844,65 @@ h1 {
   color: #06130d;
 }
 
+.tip-modal-card {
+  background: #07150e;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+  max-height: calc(100vh - 40px);
+  max-width: 880px;
+  overflow-y: auto;
+  padding: 16px;
+  width: min(880px, 100%);
+}
+
+.tip-modal-header {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+}
+
+.tip-modal-header span {
+  color: var(--lime);
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 950;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.tip-modal-header h3 {
+  color: var(--text);
+  font-size: 1.25rem;
+  line-height: 1.18;
+}
+
+.tip-modal-header p {
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+.tip-modal-header button {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.tip-modal-card .viewer-control {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.tip-modal-card .pick-form {
+  margin-bottom: 0;
+}
+
 @media (max-width: 1220px) {
   .workspace {
     grid-template-columns: 280px minmax(0, 1fr);
@@ -1829,6 +1989,13 @@ h1 {
 
   .viewer-history-row {
     grid-template-columns: 1fr;
+  }
+
+  .viewer-slip-panel,
+  .viewer-pending-panel,
+  .viewer-history-panel {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .viewer-stat-row b,

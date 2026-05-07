@@ -73,3 +73,8 @@ export type DailySlip = {
   pickIds: string[];
   generatedAt: string;
 };
+
+export type SlipHistoryItem = DailySlip & {
+  id: string;
+  publishedAt: string;
+};

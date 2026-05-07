@@ -29,7 +29,7 @@ import {
   selectSlipPicks
 } from "./domain";
 import { fetchTodayMatches } from "./sportsApi";
-import type { DailySlip, MarketType, Match, Pick, PickStatus, User, Vote as VoteRecord, VoteType } from "./types";
+import type { DailySlip, MarketType, Match, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
 const tipDay = getLocalDateKey(currentDate);
@@ -39,6 +39,7 @@ const matchesCacheKey = `pickroom:matches:${tipDay}:${hasApiFootballKey ? "api-f
 const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
 const slipCacheKey = `pickroom:slip:${tipDay}`;
+const slipHistoryCacheKey = `pickroom:slip-history:${tipDay}`;
 
 const marketOptions: MarketType[] = [
   "1X2",
@@ -159,7 +160,9 @@ export function App() {
   const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []));
   const [votes, setVotes] = useState<VoteRecord[]>(() => readStoredValue<VoteRecord[]>(votesCacheKey, []));
   const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
+  const [slipHistory, setSlipHistory] = useState<SlipHistoryItem[]>(() => readStoredValue<SlipHistoryItem[]>(slipHistoryCacheKey, []));
   const [popup, setPopup] = useState<{ title: string; body: string } | null>(null);
+  const [tipModalMatchId, setTipModalMatchId] = useState<string | null>(null);
   const [activePage, setActivePage] = useState<Page>("games");
   const [competitionFilter, setCompetitionFilter] = useState("all");
   const [formState, setFormState] = useState({
@@ -185,6 +188,7 @@ export function App() {
   useEffect(() => writeStoredValue(picksCacheKey, picks), [picks]);
   useEffect(() => writeStoredValue(votesCacheKey, votes), [votes]);
   useEffect(() => writeStoredValue(slipCacheKey, dailySlip), [dailySlip]);
+  useEffect(() => writeStoredValue(slipHistoryCacheKey, slipHistory), [slipHistory]);
 
   async function syncTodayMatches(forceRefresh = false) {
     setMatchSync("loading");
@@ -235,6 +239,7 @@ export function App() {
   }, [selectedMatchId, visibleMatches]);
 
   const selectedMatch = visibleMatches.find((match) => match.id === selectedMatchId) ?? visibleMatches[0];
+  const tipModalMatch = tipModalMatchId ? visibleMatches.find((match) => match.id === tipModalMatchId) ?? matches.find((match) => match.id === tipModalMatchId) : undefined;
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
   const communityPicks = [...picks].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   const topSlipPicks = dailySlip.pickIds
@@ -350,11 +355,12 @@ export function App() {
     event.preventDefault();
     const odds = Number(formState.odds);
     const stake = Number(formState.stake);
-    if (!selectedMatch || !formState.selection.trim() || odds <= 1 || stake <= 0) return;
+    const targetMatch = tipModalMatch ?? selectedMatch;
+    if (!targetMatch || !formState.selection.trim() || odds <= 1 || stake <= 0) return;
 
     const nextPick: Pick = {
       id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      matchId: selectedMatch.id,
+      matchId: targetMatch.id,
       userId: activeUserId,
       marketType: formState.marketType,
       selection: formState.selection.trim(),
@@ -373,6 +379,7 @@ export function App() {
       body: `${nextPick.selection} ficou guardada no teu historico e ja aparece na comunidade para votacao.`
     });
     setFormState({ marketType: "1X2", selection: "", odds: "2.00", stake: "1", bookmaker: "Manual", reason: "" });
+    setTipModalMatchId(null);
   }
 
   function castVote(pickId: string, type: VoteType) {
@@ -397,14 +404,20 @@ export function App() {
   }
 
   function publishSlip() {
-    setDailySlip((slip) => ({
-      ...slip,
+    const publishedAt = new Date().toISOString();
+    const nextSlip: DailySlip = {
+      ...dailySlip,
       status: "published",
       settlementStatus: "pending",
       profit: 0,
-      pickIds: slip.pickIds.length > 0 ? slip.pickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
-      generatedAt: new Date().toISOString()
-    }));
+      pickIds: dailySlip.pickIds.length > 0 ? dailySlip.pickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
+      generatedAt: publishedAt
+    };
+    setDailySlip(nextSlip);
+    setSlipHistory((current) => [
+      { ...nextSlip, id: `slip-${Date.now()}`, publishedAt },
+      ...current
+    ]);
   }
 
   function toggleFinalPick(pickId: string) {
@@ -445,11 +458,11 @@ export function App() {
   }
 
   function settleCombinedSlip(status: PickStatus) {
-    setDailySlip((slip) => ({
-      ...slip,
-      settlementStatus: status,
-      profit: calculateProfit(status, slip.combinedStake, combinedOdds)
-    }));
+    const profit = calculateProfit(status, dailySlip.combinedStake, combinedOdds);
+    setDailySlip((slip) => ({ ...slip, settlementStatus: status, profit }));
+    setSlipHistory((current) =>
+      current.map((item) => (item.generatedAt === dailySlip.generatedAt ? { ...item, settlementStatus: status, profit } : item))
+    );
   }
 
   function loginAs(role: "viewer" | "streamer") {
@@ -473,7 +486,13 @@ export function App() {
               <span>{pick.marketType}</span>
             </div>
           </div>
-          <div className={`status ${pick.status}`}>{selected ? "Final" : statusLabel(pick.status)}</div>
+          <div className="pick-header-actions">
+            <div className="score-badge" aria-label={`Score ${score}`}>
+              <span>Score</span>
+              <strong>{score}</strong>
+            </div>
+            <div className={`status ${pick.status}`}>{selected ? "Final" : statusLabel(pick.status)}</div>
+          </div>
         </div>
         <div className="pick-body">
           <h4>{pick.selection}</h4>
@@ -483,7 +502,6 @@ export function App() {
           <span>@{pick.odds.toFixed(2)}</span>
           <span>{pick.stake}u</span>
           <span>{pick.bookmaker}</span>
-          <span>Score {score}</span>
           {match ? <span>{match.homeTeam} vs {match.awayTeam}</span> : null}
         </div>
         <div className="vote-row">
@@ -600,10 +618,15 @@ export function App() {
             </div>
             <div className="games-grid">
               {visibleMatches.map((match) => (
-                <button
+                <article
                   className={`game-card ${match.id === selectedMatch?.id ? "selected" : ""}`}
                   key={match.id}
                   onClick={() => setSelectedMatchId(match.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") setSelectedMatchId(match.id);
+                  }}
+                  role="button"
+                  tabIndex={0}
                 >
                   <span className="game-competition">{match.competition}</span>
                   <div className="teams-line">
@@ -614,7 +637,17 @@ export function App() {
                   <small>
                     {formatKickoff(match.startsAt)} · {matchStatusLabel(match)}
                   </small>
-                </button>
+                  <button
+                    className="game-tip-button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedMatchId(match.id);
+                      setTipModalMatchId(match.id);
+                    }}
+                  >
+                    Criar tip
+                  </button>
+                </article>
               ))}
             </div>
             {visibleMatches.length === 0 ? (
@@ -638,13 +671,10 @@ export function App() {
                   <span>Forma fora <b>{selectedMatch.awayRecord ?? "Sem histórico"}</b></span>
                   <span>Tips neste jogo <b>{selectedMatchPicks.length}</b></span>
                 </div>
-                <TipForm
-                  formState={formState}
-                  selectedMatch={selectedMatch}
-                  activeUser={activeUser}
-                  onSubmit={submitPick}
-                  onChange={setFormState}
-                />
+                <button className="detail-tip-button" onClick={() => setTipModalMatchId(selectedMatch.id)}>
+                  <Vote size={16} />
+                  Criar tip neste jogo
+                </button>
                 <div className="mini-picks">
                   {selectedMatchPicks.slice(0, 3).map(renderPickCard)}
                   {selectedMatchPicks.length === 0 ? <p className="empty-copy">Abre este jogo e lança a primeira tip da comunidade.</p> : null}
@@ -752,6 +782,7 @@ export function App() {
           finalPicks={topSlipPicks}
           matches={matches}
           dailySlip={dailySlip}
+          slipHistory={slipHistory}
           combinedOdds={combinedOdds}
           multiplesStake={multiplesStake}
           votes={votes}
@@ -777,6 +808,16 @@ export function App() {
         <UserRound size={16} />
         Unidades fictícias. Sem dinheiro real, depósitos, cashout ou execução de apostas.
       </footer>
+      {tipModalMatch ? (
+        <TipModal
+          formState={formState}
+          selectedMatch={tipModalMatch}
+          activeUser={activeUser}
+          onSubmit={submitPick}
+          onChange={setFormState}
+          onClose={() => setTipModalMatchId(null)}
+        />
+      ) : null}
       {popup ? <AppPopup title={popup.title} body={popup.body} onClose={() => setPopup(null)} /> : null}
     </main>
   );
@@ -799,12 +840,51 @@ function AppPopup({ title, body, onClose }: { title: string; body: string; onClo
   );
 }
 
+function TipModal({
+  formState,
+  selectedMatch,
+  activeUser,
+  onSubmit,
+  onChange,
+  onClose
+}: {
+  formState: { marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string };
+  selectedMatch: Match;
+  activeUser: User;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onChange: React.Dispatch<React.SetStateAction<{ marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string }>>;
+  onClose: () => void;
+}) {
+  return (
+    <div className="popup-backdrop" role="dialog" aria-modal="true" aria-labelledby="tip-modal-title">
+      <section className="tip-modal-card">
+        <div className="tip-modal-header">
+          <div>
+            <span>{selectedMatch.competition}</span>
+            <h3 id="tip-modal-title">{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</h3>
+            <p>{formatKickoff(selectedMatch.startsAt)}</p>
+          </div>
+          <button type="button" onClick={onClose}>Fechar</button>
+        </div>
+        <TipForm
+          formState={formState}
+          selectedMatch={selectedMatch}
+          activeUser={activeUser}
+          onSubmit={onSubmit}
+          onChange={onChange}
+        />
+      </section>
+    </div>
+  );
+}
+
 function ViewerBetsPage({
   user,
   picks,
   finalPicks,
   matches,
   dailySlip,
+  slipHistory,
   combinedOdds,
   multiplesStake,
   votes
@@ -814,6 +894,7 @@ function ViewerBetsPage({
   finalPicks: Pick[];
   matches: Match[];
   dailySlip: DailySlip;
+  slipHistory: SlipHistoryItem[];
   combinedOdds: number;
   multiplesStake: number;
   votes: VoteRecord[];
@@ -837,6 +918,13 @@ function ViewerBetsPage({
   const userRoi = userStake > 0 ? roundUnits((userProfit / userStake) * 100) : 0;
   const slipModeLabel = dailySlip.mode === "combined" ? "Combinada" : "Multiplas";
   const slipStake = dailySlip.mode === "combined" ? dailySlip.combinedStake : multiplesStake;
+  const pendingPicks = picks
+    .filter((pick) => pick.status === "pending")
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const resolvedPicks = picks
+    .filter((pick) => pick.status !== "pending")
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const pendingSlipHistory = slipHistory.filter((item) => item.settlementStatus === "pending");
   const [showFinalPicks, setShowFinalPicks] = useState(false);
 
   return (
@@ -898,6 +986,39 @@ function ViewerBetsPage({
         </div>
       </section>
 
+      <section className="panel viewer-pending-panel">
+        <div className="section-title spread">
+          <div><Activity size={18} /><h3>Pendentes por resolver</h3></div>
+          <span>{pendingPicks.length + pendingSlipHistory.length}</span>
+        </div>
+        <div className="viewer-pending-list">
+          {pendingSlipHistory.map((slip, index) => (
+            <article className="viewer-pending-row" key={slip.id}>
+              <div>
+                <strong>Boletim #{slipHistory.length - index}</strong>
+                <span>{slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
+              </div>
+              <b>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</b>
+            </article>
+          ))}
+          {pendingPicks.map((pick) => {
+            const match = matches.find((item) => item.id === pick.matchId);
+            return (
+              <article className="viewer-pending-row" key={pick.id}>
+                <div>
+                  <strong>{pick.selection}</strong>
+                  <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                </div>
+                <b>@{pick.odds.toFixed(2)}</b>
+              </article>
+            );
+          })}
+          {pendingPicks.length === 0 && pendingSlipHistory.length === 0 ? (
+            <p className="empty-copy">Nao tens tips nem boletins pendentes neste momento.</p>
+          ) : null}
+        </div>
+      </section>
+
       <section className="panel viewer-history-panel">
         <div className="section-title spread">
           <div><LineChart size={18} /><h3>O meu historico</h3></div>
@@ -910,9 +1031,18 @@ function ViewerBetsPage({
           <span>ROI <b>{userRoi.toFixed(1)}%</b></span>
         </div>
         <div className="viewer-history-list">
-          {[...picks]
-            .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-            .map((pick) => {
+          {slipHistory.map((slip, index) => (
+            <article className="viewer-history-row slip-history-row" key={slip.id}>
+              <div>
+                <strong>Boletim publicado #{slipHistory.length - index}</strong>
+                <span>{new Date(slip.publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
+              </div>
+              <small>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</small>
+              <div className={`status ${slip.settlementStatus}`}>{statusLabel(slip.settlementStatus)}</div>
+              <b>{slip.profit >= 0 ? "+" : ""}{slip.profit.toFixed(2)}u</b>
+            </article>
+          ))}
+          {resolvedPicks.map((pick) => {
               const match = matches.find((item) => item.id === pick.matchId);
               const selected = finalPickIds.has(pick.id);
               const displayedStatus: PickStatus = dailySlip.mode === "combined" && selected && isPublished ? dailySlip.settlementStatus : pick.status;
@@ -931,7 +1061,7 @@ function ViewerBetsPage({
                 </article>
               );
             })}
-          {picks.length === 0 ? <p className="empty-copy">Ainda nao submeteste tips hoje. Vai aos Jogos e escolhe uma partida.</p> : null}
+          {resolvedPicks.length === 0 && slipHistory.length === 0 ? <p className="empty-copy">O historico fechado aparece aqui depois das tips serem resolvidas.</p> : null}
         </div>
       </section>
     </section>
