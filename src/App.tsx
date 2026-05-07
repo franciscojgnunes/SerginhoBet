@@ -238,6 +238,12 @@ function buildLeaderboard(scope: StatsScope) {
     .sort((a, b) => b.profit - a.profit || b.roi - a.roi || b.winrate - a.winrate);
 }
 
+function formatNameList(names: string[]) {
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} e ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
 function Avatar({ user }: { user: User }) {
   return (
     <span className="avatar" style={{ background: user.avatarColor }}>
@@ -270,6 +276,7 @@ export function App() {
     | null
   >(null);
   const [tipModalMatchId, setTipModalMatchId] = useState<string | null>(null);
+  const [kickoffCheckAt, setKickoffCheckAt] = useState(() => Date.now());
   const [selectedResolveSlipId, setSelectedResolveSlipId] = useState("");
   const [activePage, setActivePage] = useState<Page>("games");
   const [competitionFilter, setCompetitionFilter] = useState("all");
@@ -478,6 +485,50 @@ export function App() {
       body: `O SerginhoEsteves publicou a aposta da comunidade com ${topSlipPicks.length} picks finais. Ainda vais a tempo de ver antes dos jogos comecarem.`
     });
   }, [activeUserId, dailySlip.generatedAt, dailySlip.status, isLoggedIn, isStreamer, matches, topSlipPicks]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setKickoffCheckAt(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn || popup) return;
+
+    const now = kickoffCheckAt;
+    const kickoffWindowMs = 15 * 60 * 1000;
+    const activeSlips = slipHistory.filter((slip) => slip.settlementStatus === "pending");
+
+    for (const slip of activeSlips) {
+      const slipPicks = slip.pickIds
+        .map((pickId) => picks.find((pick) => pick.id === pickId))
+        .filter((pick): pick is Pick => Boolean(pick));
+      const matchIds = Array.from(new Set(slipPicks.map((pick) => pick.matchId)));
+
+      for (const matchId of matchIds) {
+        const match = matches.find((item) => item.id === matchId);
+        if (!match) continue;
+
+        const startsAt = new Date(match.startsAt).getTime();
+        if (startsAt > now || now - startsAt > kickoffWindowMs) continue;
+
+        const seenKey = `pickroom:kickoff-popup:${tipDay}:${activeUserId}:${slip.id}:${match.id}`;
+        if (readStoredValue(seenKey, false)) continue;
+
+        const authors = Array.from(new Set(
+          slipPicks
+            .filter((pick) => pick.matchId === match.id)
+            .map((pick) => userById(pick.userId).displayName)
+        ));
+        const verb = authors.length === 1 ? "apostou" : "apostaram";
+        writeStoredValue(seenKey, true);
+        setPopup({
+          title: "Jogo da aposta a comecar",
+          body: `O jogo ${match.homeTeam} vs ${match.awayTeam}, em que ${formatNameList(authors)} ${verb}, vai comecar agora!`
+        });
+        return;
+      }
+    }
+  }, [activeUserId, isLoggedIn, kickoffCheckAt, matches, picks, popup, slipHistory]);
 
   const leaderboard = useMemo(() => buildLeaderboard(monthScope), [monthScope]);
   const generalLeaderboard = useMemo(() => buildLeaderboard(allTimeScope), [allTimeScope]);
