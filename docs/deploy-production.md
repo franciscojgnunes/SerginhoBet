@@ -50,6 +50,14 @@ VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 VITE_SITE_URL=https://YOUR_VERCEL_DOMAIN
 ```
 
+The app also accepts Vercel/Next-style variable names:
+
+```txt
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
+NEXT_PUBLIC_SITE_URL=https://YOUR_VERCEL_DOMAIN
+```
+
 Redeploy after adding variables.
 
 ## 5. GitHub Action for daily matches
