@@ -70,6 +70,7 @@ const marketPlaceholders: Record<MarketType, string> = {
 };
 
 type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats";
+type StatsScope = ReturnType<typeof buildStatsScope>;
 
 function createDefaultDailySlip(): DailySlip {
   return {
@@ -104,6 +105,25 @@ function writeStoredValue<T>(key: string, value: T) {
   }
 }
 
+function readStoredCollections<T>(prefix: string): T[] {
+  try {
+    const items: T[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(prefix)) continue;
+      const parsed = JSON.parse(localStorage.getItem(key) ?? "[]");
+      if (Array.isArray(parsed)) items.push(...parsed);
+    }
+    return items;
+  } catch {
+    return [];
+  }
+}
+
+function mergeById<T extends { id: string }>(items: T[]) {
+  return Array.from(new Map(items.map((item) => [item.id, item])).values());
+}
+
 function formatKickoff(value: string) {
   return new Intl.DateTimeFormat("pt-PT", {
     weekday: "short",
@@ -134,6 +154,88 @@ function matchStatusLabel(match: Match) {
 
 function userById(userId: string) {
   return users.find((user) => user.id === userId) ?? users[0];
+}
+
+function buildStatsScope(label: string, picks: Pick[], slips: SlipHistoryItem[], filter: (value: string) => boolean) {
+  const scopePicks = picks.filter((pick) => filter(pick.createdAt));
+  const scopeSlips = slips.filter((slip) => filter(slip.publishedAt));
+  const selectedIds = new Set(scopeSlips.flatMap((slip) => slip.pickIds));
+  const settledSlips = scopeSlips.filter((slip) => slip.settlementStatus !== "pending");
+  const staked = roundUnits(settledSlips.reduce((total, slip) => total + (slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length), 0));
+  const profit = roundUnits(settledSlips.reduce((total, slip) => total + slip.profit, 0));
+
+  return {
+    label,
+    total: {
+      submitted: scopePicks.length,
+      selected: selectedIds.size,
+      settled: settledSlips.length,
+      pendingSelected: scopeSlips.filter((slip) => slip.settlementStatus === "pending").reduce((total, slip) => total + slip.pickIds.length, 0),
+      staked,
+      profit,
+      roi: staked > 0 ? roundUnits((profit / staked) * 100) : 0
+    },
+    byViewer: users.map((user) => {
+      const submitted = scopePicks.filter((pick) => pick.userId === user.id).length;
+      const selected = scopePicks.filter((pick) => selectedIds.has(pick.id) && pick.userId === user.id).length;
+      let settled = 0;
+      let viewerStake = 0;
+      let viewerProfit = 0;
+
+      for (const slip of settledSlips) {
+        const slipPicks = slip.pickIds.map((pickId) => picks.find((pick) => pick.id === pickId)).filter((pick): pick is Pick => Boolean(pick));
+        const viewerPickCount = slipPicks.filter((pick) => pick.userId === user.id).length;
+        if (viewerPickCount === 0 || slipPicks.length === 0) continue;
+        const slipStake = slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length;
+        settled += viewerPickCount;
+        viewerStake += (slipStake / slipPicks.length) * viewerPickCount;
+        viewerProfit += (slip.profit / slipPicks.length) * viewerPickCount;
+      }
+
+      const roundedStake = roundUnits(viewerStake);
+      const roundedProfit = roundUnits(viewerProfit);
+      return {
+        userId: user.id,
+        submitted,
+        selected,
+        settled,
+        pendingSelected: scopePicks.filter((pick) => selectedIds.has(pick.id) && pick.userId === user.id && pick.status === "pending").length,
+        staked: roundedStake,
+        profit: roundedProfit,
+        roi: roundedStake > 0 ? roundUnits((roundedProfit / roundedStake) * 100) : 0
+      };
+    }).sort((left, right) => right.profit - left.profit || right.selected - left.selected || right.submitted - left.submitted)
+  };
+}
+
+function buildSlipTimeline(slips: SlipHistoryItem[], filter: (value: string) => boolean) {
+  let cumulative = 0;
+  return slips
+    .filter((slip) => slip.settlementStatus !== "pending" && filter(slip.publishedAt))
+    .sort((left, right) => new Date(left.publishedAt).getTime() - new Date(right.publishedAt).getTime())
+    .map((slip) => {
+      cumulative = roundUnits(cumulative + slip.profit);
+      return {
+        label: new Date(slip.publishedAt).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" }),
+        profit: slip.profit,
+        cumulative
+      };
+    });
+}
+
+function buildLeaderboard(scope: StatsScope) {
+  return users
+    .map((user) => {
+      const row = scope.byViewer.find((viewerRow) => viewerRow.userId === user.id);
+      return {
+        user,
+        picks: row?.settled ?? 0,
+        profit: row?.profit ?? 0,
+        roi: row?.roi ?? 0,
+        winrate: row && row.selected > 0 ? roundUnits((row.settled / row.selected) * 100) : 0
+      };
+    })
+    .sort((a, b) => b.profit - a.profit || b.roi - a.roi || b.winrate - a.winrate);
 }
 
 function Avatar({ user }: { user: User }) {
@@ -302,6 +404,30 @@ export function App() {
     : { ...baseBankroll, exposure: slipExposure };
   const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
   const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
+  const allStoredPicks = useMemo(() => mergeById([...readStoredCollections<Pick>("pickroom:picks:"), ...picks]), [picks]);
+  const allStoredSlips = useMemo(() => mergeById([...readStoredCollections<SlipHistoryItem>("pickroom:slip-history:"), ...slipHistory]), [slipHistory]);
+  const monthKey = tipDay.slice(0, 7);
+  const monthName = new Intl.DateTimeFormat("pt-PT", { month: "long" }).format(currentDate).replace(/^./, (letter) => letter.toUpperCase());
+  const dayScope = useMemo(
+    () => buildStatsScope("Hoje", allStoredPicks, allStoredSlips, (value) => value.slice(0, 10) === tipDay),
+    [allStoredPicks, allStoredSlips]
+  );
+  const monthScope = useMemo(
+    () => buildStatsScope(monthName, allStoredPicks, allStoredSlips, (value) => value.slice(0, 7) === monthKey),
+    [allStoredPicks, allStoredSlips, monthName, monthKey]
+  );
+  const allTimeScope = useMemo(
+    () => buildStatsScope("Geral", allStoredPicks, allStoredSlips, () => true),
+    [allStoredPicks, allStoredSlips]
+  );
+  const monthProfitTimeline = useMemo(
+    () => buildSlipTimeline(allStoredSlips, (value) => value.slice(0, 7) === monthKey),
+    [allStoredSlips, monthKey]
+  );
+  const allTimeProfitTimeline = useMemo(
+    () => buildSlipTimeline(allStoredSlips, () => true),
+    [allStoredSlips]
+  );
   const displayedDailyStats = dailySlip.mode === "combined" && dailySlip.status === "published"
     ? {
         ...dailyStats,
@@ -334,6 +460,7 @@ export function App() {
   const displayedProfitTimeline = dailySlip.mode === "combined" && dailySlip.status === "published" && dailySlip.settlementStatus !== "pending"
     ? [{ label: "Boletim", profit: dailySlip.profit, cumulative: dailySlip.profit }]
     : profitTimeline;
+  const displayedDayScope = { ...dayScope, total: displayedDailyStats.total, byViewer: displayedDailyStats.byViewer };
 
   useEffect(() => {
     if (!isLoggedIn || isStreamer || dailySlip.status !== "published" || topSlipPicks.length === 0) return;
@@ -352,38 +479,8 @@ export function App() {
     });
   }, [activeUserId, dailySlip.generatedAt, dailySlip.status, isLoggedIn, isStreamer, matches, topSlipPicks]);
 
-  const leaderboard = useMemo(() => {
-    if (dailySlip.mode === "combined" && dailySlip.status === "published") {
-      return users
-        .map((user) => {
-          const row = displayedDailyStats.byViewer.find((viewerRow) => viewerRow.userId === user.id);
-          return {
-            user,
-            picks: row?.settled ?? 0,
-            profit: row?.profit ?? 0,
-            roi: row?.roi ?? 0,
-            winrate: row && row.settled > 0 && dailySlip.settlementStatus === "won" ? 100 : 0
-          };
-        })
-        .sort((a, b) => b.profit - a.profit || b.roi - a.roi || b.winrate - a.winrate);
-    }
-
-    return users
-      .map((user) => {
-        const settled = picks.filter((pick) => pick.userId === user.id && pick.status !== "pending");
-        const totalProfit = settled.reduce((total, pick) => total + pick.profit, 0);
-        const totalStaked = settled.reduce((total, pick) => total + pick.stake, 0);
-        const wins = settled.filter((pick) => pick.status === "won" || pick.status === "half_won").length;
-        return {
-          user,
-          picks: settled.length,
-          profit: totalProfit,
-          roi: totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0,
-          winrate: settled.length > 0 ? (wins / settled.length) * 100 : 0
-        };
-      })
-      .sort((a, b) => b.profit - a.profit || b.roi - a.roi || b.winrate - a.winrate);
-  }, [dailySlip.mode, dailySlip.settlementStatus, dailySlip.status, displayedDailyStats.byViewer, picks]);
+  const leaderboard = useMemo(() => buildLeaderboard(monthScope), [monthScope]);
+  const generalLeaderboard = useMemo(() => buildLeaderboard(allTimeScope), [allTimeScope]);
 
   function submitPick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -901,7 +998,18 @@ export function App() {
       ) : null}
 
       {activePage === "stats" ? (
-        <StatsPage dailyStats={displayedDailyStats} profitTimeline={displayedProfitTimeline} leaderboard={leaderboard} bankroll={communityBankroll} />
+        <StatsDashboard
+          dayScope={displayedDayScope}
+          monthScope={monthScope}
+          allTimeScope={allTimeScope}
+          dayTimeline={displayedProfitTimeline}
+          monthTimeline={monthProfitTimeline}
+          allTimeTimeline={allTimeProfitTimeline}
+          monthlyLeaderboard={leaderboard}
+          generalLeaderboard={generalLeaderboard}
+          bankroll={communityBankroll}
+          monthName={monthName}
+        />
       ) : null}
 
       <footer className="disclaimer">
@@ -1670,6 +1778,157 @@ function BankPanel({ bankroll }: { bankroll: ReturnType<typeof calculateBankroll
       <div className="bank-line"><span>Disponível</span><strong>{(bankroll.current - bankroll.exposure).toFixed(2)}u</strong></div>
       <div className="bank-line"><span>Exposição boletim</span><strong>{bankroll.exposure.toFixed(2)}u</strong></div>
       <div className="bank-line"><span>Lucro fechado</span><strong>{bankroll.settledProfit >= 0 ? "+" : ""}{bankroll.settledProfit.toFixed(2)}u</strong></div>
+    </section>
+  );
+}
+
+function StatsDashboard({
+  dayScope,
+  monthScope,
+  allTimeScope,
+  dayTimeline,
+  monthTimeline,
+  allTimeTimeline,
+  monthlyLeaderboard,
+  generalLeaderboard,
+  bankroll,
+  monthName
+}: {
+  dayScope: StatsScope;
+  monthScope: StatsScope;
+  allTimeScope: StatsScope;
+  dayTimeline: Array<{ label: string; profit: number; cumulative: number }>;
+  monthTimeline: Array<{ label: string; profit: number; cumulative: number }>;
+  allTimeTimeline: Array<{ label: string; profit: number; cumulative: number }>;
+  monthlyLeaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
+  generalLeaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
+  bankroll: ReturnType<typeof calculateBankroll>;
+  monthName: string;
+}) {
+  const giveawayLeader = monthlyLeaderboard.find((row) => row.picks > 0) ?? monthlyLeaderboard[0];
+  const eligibleViewers = monthlyLeaderboard.filter((row) => row.picks > 0).length;
+
+  return (
+    <section className="stats-page">
+      <section className="panel stats-hero-panel">
+        <div className="section-title"><LineChart size={18} /><h3>Estatisticas do dia</h3></div>
+        <StatsMetricGrid scope={dayScope} bankroll={bankroll} />
+        <ProfitChart points={dayTimeline} />
+      </section>
+
+      <section className="panel stats-hero-panel">
+        <div className="section-title"><LineChart size={18} /><h3>Estatisticas de {monthName}</h3></div>
+        <StatsMetricGrid scope={monthScope} />
+        <ProfitChart points={monthTimeline} />
+      </section>
+
+      <section className="panel stats-hero-panel">
+        <div className="section-title"><LineChart size={18} /><h3>Estatisticas gerais</h3></div>
+        <StatsMetricGrid scope={allTimeScope} />
+        <ProfitChart points={allTimeTimeline} />
+      </section>
+
+      <section className="panel giveaway-panel">
+        <div className="section-title spread">
+          <div><Trophy size={18} /><h3>Giveaway de {monthName}</h3></div>
+          <span>{eligibleViewers} elegiveis</span>
+        </div>
+        {giveawayLeader ? (
+          <div className="giveaway-leader">
+            <span className="giveaway-rank">1</span>
+            <Avatar user={giveawayLeader.user} />
+            <div>
+              <strong>{giveawayLeader.user.displayName}</strong>
+              <small>1. lugar por lucro fechado em {monthName}</small>
+            </div>
+            <b>{giveawayLeader.profit >= 0 ? "+" : ""}{giveawayLeader.profit.toFixed(2)}u</b>
+          </div>
+        ) : null}
+        <div className="giveaway-rules">
+          <span>Minimo <b>1 tip final resolvida</b></span>
+          <span>Desempate <b>ROI, depois winrate</b></span>
+          <span>Premio <b>Badge + giveaway em stream</b></span>
+        </div>
+      </section>
+
+      <StatsTable title={`Performance de ${monthName}`} scope={monthScope} />
+      <StatsTable title="Performance geral" scope={allTimeScope} />
+      <LeaderboardPanel title={`Leaderboard de ${monthName}`} leaderboard={monthlyLeaderboard} />
+      <LeaderboardPanel title="Leaderboard geral" leaderboard={generalLeaderboard} />
+    </section>
+  );
+}
+
+function StatsMetricGrid({ scope, bankroll }: { scope: StatsScope; bankroll?: ReturnType<typeof calculateBankroll> }) {
+  return (
+    <div className="stat-grid wide">
+      <span>Tips submetidas <b>{scope.total.submitted}</b></span>
+      <span>Finais do streamer <b>{scope.total.selected}</b></span>
+      <span>Resolvidas <b>{scope.total.settled}</b></span>
+      <span>Stake fechada <b>{scope.total.staked.toFixed(2)}u</b></span>
+      <span>Lucro total <b>{scope.total.profit >= 0 ? "+" : ""}{scope.total.profit.toFixed(2)}u</b></span>
+      <span>ROI <b>{scope.total.roi.toFixed(1)}%</b></span>
+      {bankroll ? (
+        <>
+          <span>Banca atual <b>{bankroll.current.toFixed(2)}u</b></span>
+          <span>Disponivel <b>{(bankroll.current - bankroll.exposure).toFixed(2)}u</b></span>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
+  return (
+    <section className="panel stats-table-panel">
+      <div className="section-title spread">
+        <div><Trophy size={18} /><h3>{title}</h3></div>
+        <span>{scope.total.profit >= 0 ? "+" : ""}{scope.total.profit.toFixed(2)}u</span>
+      </div>
+      <div className="stats-table">
+        <div className="stats-table-head"><span>Pessoa</span><span>Tips</span><span>Finais</span><span>Resolvidas</span><span>Stake</span><span>Lucro</span><span>ROI</span></div>
+        {users.map((user) => {
+          const row = scope.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
+            submitted: 0,
+            selected: 0,
+            settled: 0,
+            pendingSelected: 0,
+            staked: 0,
+            profit: 0,
+            roi: 0
+          };
+          return (
+            <div className="stats-table-row" key={user.id}>
+              <span className="viewer-cell"><Avatar user={user} /> {user.displayName}</span>
+              <span>{row.submitted}</span>
+              <span>{row.selected}</span>
+              <span>{row.settled}</span>
+              <span>{row.staked.toFixed(2)}u</span>
+              <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+              <span>{row.roi.toFixed(1)}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function LeaderboardPanel({ title, leaderboard }: { title: string; leaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }> }) {
+  return (
+    <section className="panel stats-table-panel">
+      <div className="section-title"><Trophy size={18} /><h3>{title}</h3></div>
+      <div className="leaderboard">
+        {leaderboard.map((row, index) => (
+          <div className="leader-row" key={row.user.id}>
+            <span>{index + 1}</span>
+            <Avatar user={row.user} />
+            <strong>{row.user.displayName}</strong>
+            <small>{row.picks} resolvidas - ROI {row.roi.toFixed(1)}%</small>
+            <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
