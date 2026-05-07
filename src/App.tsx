@@ -69,7 +69,7 @@ const marketPlaceholders: Record<MarketType, string> = {
   Outro: "Escreve o mercado"
 };
 
-type Page = "games" | "community" | "viewer" | "resolve" | "stats";
+type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats";
 
 function createDefaultDailySlip(): DailySlip {
   return {
@@ -162,6 +162,11 @@ export function App() {
   const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
   const [slipHistory, setSlipHistory] = useState<SlipHistoryItem[]>(() => readStoredValue<SlipHistoryItem[]>(slipHistoryCacheKey, []));
   const [popup, setPopup] = useState<{ title: string; body: string } | null>(null);
+  const [pendingSettlement, setPendingSettlement] = useState<
+    | { kind: "combined"; slipId: string; status: PickStatus }
+    | { kind: "pick"; slipId: string; pickId: string; status: PickStatus }
+    | null
+  >(null);
   const [tipModalMatchId, setTipModalMatchId] = useState<string | null>(null);
   const [selectedResolveSlipId, setSelectedResolveSlipId] = useState("");
   const [activePage, setActivePage] = useState<Page>("games");
@@ -193,12 +198,13 @@ export function App() {
   useEffect(() => writeStoredValue(slipHistoryCacheKey, slipHistory), [slipHistory]);
 
   useEffect(() => {
-    if (slipHistory.length === 0) {
+    const pendingSlips = slipHistory.filter((slip) => slip.settlementStatus === "pending");
+    if (pendingSlips.length === 0) {
       setSelectedResolveSlipId("");
       return;
     }
-    if (!slipHistory.some((slip) => slip.id === selectedResolveSlipId)) {
-      setSelectedResolveSlipId(slipHistory[0].id);
+    if (!pendingSlips.some((slip) => slip.id === selectedResolveSlipId)) {
+      setSelectedResolveSlipId(pendingSlips[0].id);
     }
   }, [selectedResolveSlipId, slipHistory]);
 
@@ -268,7 +274,8 @@ export function App() {
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
     .filter((pick): pick is Pick => Boolean(pick));
-  const selectedResolveSlip = slipHistory.find((slip) => slip.id === selectedResolveSlipId) ?? slipHistory[0];
+  const resolvableSlipHistory = slipHistory.filter((slip) => slip.settlementStatus === "pending");
+  const selectedResolveSlip = resolvableSlipHistory.find((slip) => slip.id === selectedResolveSlipId) ?? resolvableSlipHistory[0];
   const selectedResolvePicks = selectedResolveSlip
     ? selectedResolveSlip.pickIds.map((pickId) => picks.find((pick) => pick.id === pickId)).filter((pick): pick is Pick => Boolean(pick))
     : [];
@@ -517,6 +524,20 @@ export function App() {
     }
   }
 
+  function confirmPendingSettlement() {
+    if (!pendingSettlement) return;
+    if (pendingSettlement.kind === "combined") {
+      settleCombinedSlip(pendingSettlement.slipId, pendingSettlement.status);
+    } else {
+      settlePick(pendingSettlement.slipId, pendingSettlement.pickId, pendingSettlement.status);
+    }
+    setPendingSettlement(null);
+    setPopup({
+      title: "Aposta resolvida",
+      body: "O resultado ficou guardado no historico. A aposta saiu da lista de pendentes."
+    });
+  }
+
   function loginAs(role: "viewer" | "streamer") {
     setActiveUserId(role === "streamer" ? "u-serginho" : "u-xico");
     setIsLoggedIn(true);
@@ -623,6 +644,7 @@ export function App() {
             <button className={activePage === "community" ? "active" : ""} onClick={() => setActivePage("community")}>Comunidade</button>
             {!isStreamer ? <button className={activePage === "viewer" ? "active" : ""} onClick={() => setActivePage("viewer")}>Minhas apostas</button> : null}
             {isStreamer ? <button className={activePage === "resolve" ? "active" : ""} onClick={() => setActivePage("resolve")}>Resolver</button> : null}
+            <button className={activePage === "history" ? "active" : ""} onClick={() => setActivePage("history")}>Histórico</button>
             <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
           </div>
           <LogIn size={18} />
@@ -856,14 +878,25 @@ export function App() {
       {activePage === "resolve" && isStreamer ? (
         <ResolvePage
           selectedSlip={selectedResolveSlip}
-          slipHistory={slipHistory}
+          slipHistory={resolvableSlipHistory}
           picks={selectedResolvePicks}
           matches={matches}
           combinedOdds={selectedResolveCombinedOdds}
           selectedSlipId={selectedResolveSlipId}
           onSelectSlip={setSelectedResolveSlipId}
-          onSettlePick={settlePick}
-          onSettleCombined={settleCombinedSlip}
+          onSettlePick={(slipId, pickId, status) => setPendingSettlement({ kind: "pick", slipId, pickId, status })}
+          onSettleCombined={(slipId, status) => setPendingSettlement({ kind: "combined", slipId, status })}
+        />
+      ) : null}
+
+      {activePage === "history" ? (
+        <HistoryPage
+          user={activeUser}
+          isStreamer={isStreamer}
+          allPicks={picks}
+          matches={matches}
+          slipHistory={slipHistory}
+          votes={votes}
         />
       ) : null}
 
@@ -885,6 +918,13 @@ export function App() {
           onClose={() => setTipModalMatchId(null)}
         />
       ) : null}
+      {pendingSettlement ? (
+        <ConfirmSettlementPopup
+          status={pendingSettlement.status}
+          onCancel={() => setPendingSettlement(null)}
+          onConfirm={confirmPendingSettlement}
+        />
+      ) : null}
       {popup ? <AppPopup title={popup.title} body={popup.body} onClose={() => setPopup(null)} /> : null}
     </main>
   );
@@ -902,6 +942,34 @@ function AppPopup({ title, body, onClose }: { title: string; body: string; onClo
           <p>{body}</p>
         </div>
         <button onClick={onClose}>OK</button>
+      </section>
+    </div>
+  );
+}
+
+function ConfirmSettlementPopup({
+  status,
+  onCancel,
+  onConfirm
+}: {
+  status: PickStatus;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="popup-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirm-settlement-title">
+      <section className="popup-card confirm-card">
+        <div className="brand-mark">
+          <ShieldCheck size={22} />
+        </div>
+        <div>
+          <h3 id="confirm-settlement-title">Confirmar resolução</h3>
+          <p>Vais marcar esta aposta como <b>{statusLabel(status)}</b>. Confirma se o resultado está correto antes de guardar.</p>
+        </div>
+        <div className="confirm-actions">
+          <button className="ghost" onClick={onCancel}>Cancelar</button>
+          <button onClick={onConfirm}>Confirmar</button>
+        </div>
       </section>
     </div>
   );
@@ -1133,7 +1201,7 @@ function ViewerBetsPage({
         </div>
       </section>
 
-      <section className="panel viewer-history-panel">
+      {false ? <section className="panel viewer-history-panel">
         <div className="section-title spread">
           <div><LineChart size={18} /><h3>O meu historico</h3></div>
           <span>{picks.length} tips</span>
@@ -1179,6 +1247,95 @@ function ViewerBetsPage({
               );
             })}
           {resolvedPicks.length === 0 && slipHistory.length === 0 ? <p className="empty-copy">O historico fechado aparece aqui depois das tips serem resolvidas.</p> : null}
+        </div>
+      </section> : null}
+    </section>
+  );
+}
+
+function HistoryPage({
+  user,
+  isStreamer,
+  allPicks,
+  matches,
+  slipHistory,
+  votes
+}: {
+  user: User;
+  isStreamer: boolean;
+  allPicks: Pick[];
+  matches: Match[];
+  slipHistory: SlipHistoryItem[];
+  votes: VoteRecord[];
+}) {
+  const [expandedSlipIds, setExpandedSlipIds] = useState<Set<string>>(() => new Set());
+  const visiblePicks = isStreamer ? allPicks : allPicks.filter((pick) => pick.userId === user.id);
+  const resolvedPicks = visiblePicks
+    .filter((pick) => pick.status !== "pending")
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const settledSlips = slipHistory.filter((slip) => slip.settlementStatus !== "pending");
+  const totalProfit = settledSlips.reduce((total, slip) => total + slip.profit, 0);
+
+  function toggleExpandedSlip(slipId: string) {
+    setExpandedSlipIds((current) => {
+      const next = new Set(current);
+      if (next.has(slipId)) next.delete(slipId);
+      else next.add(slipId);
+      return next;
+    });
+  }
+
+  function renderSlipDetailList(slip: SlipHistoryItem) {
+    return (
+      <div className="slip-detail-list">
+        {slip.pickIds.map((pickId, index) => {
+          const pick = allPicks.find((item) => item.id === pickId);
+          if (!pick) return null;
+          const match = matches.find((item) => item.id === pick.matchId);
+          const author = userById(pick.userId);
+          return (
+            <div className="slip-detail-row" key={pick.id}>
+              <span>{index + 1}</span>
+              <div>
+                <strong>{pick.selection}</strong>
+                <small>{author.displayName} - {match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <section className="history-page">
+      <section className="panel history-panel">
+        <div className="section-title spread">
+          <div><LineChart size={18} /><h3>Histórico de apostas</h3></div>
+          <span>{settledSlips.length} resolvidas</span>
+        </div>
+        <div className="viewer-slip-metrics">
+          <span>Boletins <b>{slipHistory.length}</b></span>
+          <span>Resolvidos <b>{settledSlips.length}</b></span>
+          <span>Tips fechadas <b>{resolvedPicks.length}</b></span>
+          <span>Lucro <b>{totalProfit >= 0 ? "+" : ""}{totalProfit.toFixed(2)}u</b></span>
+        </div>
+        <div className="viewer-history-list">
+          {slipHistory.map((slip, index) => (
+            <article className="slip-history-card" key={slip.id}>
+              <button className="viewer-history-row slip-history-row slip-expand-toggle" onClick={() => toggleExpandedSlip(slip.id)}>
+                <div>
+                  <strong>Boletim publicado #{slipHistory.length - index}</strong>
+                  <span>{new Date(slip.publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
+                </div>
+                <small>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</small>
+                <div className={`status ${slip.settlementStatus}`}>{statusLabel(slip.settlementStatus)}</div>
+                <b>{expandedSlipIds.has(slip.id) ? "Esconder" : `${slip.profit >= 0 ? "+" : ""}${slip.profit.toFixed(2)}u`}</b>
+              </button>
+              {expandedSlipIds.has(slip.id) ? renderSlipDetailList(slip) : null}
+            </article>
+          ))}
+          {slipHistory.length === 0 ? <p className="empty-copy">Ainda nao existem apostas publicadas no historico.</p> : null}
         </div>
       </section>
     </section>

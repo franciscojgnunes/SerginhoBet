@@ -847,6 +847,16 @@ h1 {
   max-width: 1280px;
 }
 
+.history-page {
+  animation: page-enter 320ms var(--ease-out) both;
+  margin: 0 auto;
+  max-width: 1280px;
+}
+
+.history-panel {
+  min-width: 0;
+}
+
 .viewer-slip-panel,
 .viewer-history-panel {
   align-self: start;
@@ -2113,6 +2123,27 @@ h1 {
   color: #06130d;
 }
 
+.confirm-card {
+  grid-template-columns: 48px 1fr;
+}
+
+.confirm-card p b {
+  color: var(--lime);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  grid-column: 2;
+  justify-content: flex-end;
+}
+
+.confirm-actions .ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
 .tip-modal-card {
   animation: modal-pop 280ms var(--ease-snap) both;
   background: #07150e;
@@ -2253,6 +2284,19 @@ h1 {
   .stats-table-head,
   .stats-table-row {
     min-width: 720px;
+  }
+
+  .confirm-card {
+    grid-template-columns: 1fr;
+  }
+
+  .confirm-actions {
+    grid-column: auto;
+    justify-content: stretch;
+  }
+
+  .confirm-actions button {
+    flex: 1;
   }
 
   .pick-form {
