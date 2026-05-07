@@ -868,7 +868,7 @@ export function App() {
       ) : null}
 
       {activePage === "stats" ? (
-        <StatsPage dailyStats={displayedDailyStats} profitTimeline={displayedProfitTimeline} leaderboard={leaderboard} />
+        <StatsPage dailyStats={displayedDailyStats} profitTimeline={displayedProfitTimeline} leaderboard={leaderboard} bankroll={communityBankroll} />
       ) : null}
 
       <footer className="disclaimer">
@@ -1520,11 +1520,13 @@ function BankPanel({ bankroll }: { bankroll: ReturnType<typeof calculateBankroll
 function StatsPage({
   dailyStats,
   profitTimeline,
-  leaderboard
+  leaderboard,
+  bankroll
 }: {
   dailyStats: ReturnType<typeof calculateDailyStats>;
   profitTimeline: Array<{ label: string; profit: number; cumulative: number }>;
   leaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
+  bankroll: ReturnType<typeof calculateBankroll>;
 }) {
   const giveawayLeader = leaderboard[0];
   const eligibleViewers = leaderboard.filter((row) => row.picks > 0).length;
@@ -1538,6 +1540,8 @@ function StatsPage({
           <span>Finais do streamer <b>{dailyStats.total.selected}</b></span>
           <span>Lucro total <b>{dailyStats.total.profit >= 0 ? "+" : ""}{dailyStats.total.profit.toFixed(2)}u</b></span>
           <span>ROI <b>{dailyStats.total.roi.toFixed(1)}%</b></span>
+          <span>Banca atual <b>{bankroll.current.toFixed(2)}u</b></span>
+          <span>Disponível <b>{(bankroll.current - bankroll.exposure).toFixed(2)}u</b></span>
         </div>
         <ProfitChart points={profitTimeline} />
       </section>
