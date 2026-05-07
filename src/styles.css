@@ -192,7 +192,7 @@ button:disabled {
 .login-choice-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
 }
 
 .login-choice-grid button {
@@ -203,6 +203,12 @@ button:disabled {
 
 .login-choice-grid .streamer-login {
   background: var(--green);
+}
+
+.login-warning {
+  color: var(--muted);
+  font-size: 0.92rem;
+  margin-top: 14px;
 }
 
 .topbar {
@@ -360,6 +366,34 @@ h1 {
   gap: 6px;
   padding: 0.38rem 0.62rem;
   text-transform: uppercase;
+}
+
+.auth-name,
+.sync-pill {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 850;
+  min-height: 38px;
+  padding: 0 0.72rem;
+}
+
+.sync-pill {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.sync-pill.ready {
+  border-color: rgba(22, 215, 130, 0.42);
+  color: var(--green);
+}
+
+.sync-pill.error {
+  border-color: rgba(255, 90, 90, 0.42);
+  color: #ff7777;
 }
 
 .sync-chip.live {

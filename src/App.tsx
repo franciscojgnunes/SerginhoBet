@@ -29,6 +29,8 @@ import {
   selectSlipPicks
 } from "./domain";
 import { fetchTodayMatches } from "./sportsApi";
+import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
+import { loadRemoteState, savePick, saveProfile, saveSettlement, saveSlip, saveVote } from "./supabaseData";
 import type { DailySlip, MarketType, Match, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -71,6 +73,13 @@ const marketPlaceholders: Record<MarketType, string> = {
 
 type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats";
 type StatsScope = ReturnType<typeof buildStatsScope>;
+type SyncStatus = "idle" | "loading" | "ready" | "saving" | "error";
+
+let runtimeUsers: User[] = [...users];
+
+function setRuntimeUsers(nextUsers: User[]) {
+  runtimeUsers = nextUsers.length > 0 ? nextUsers : [...users];
+}
 
 function createDefaultDailySlip(): DailySlip {
   return {
@@ -153,7 +162,7 @@ function matchStatusLabel(match: Match) {
 }
 
 function userById(userId: string) {
-  return users.find((user) => user.id === userId) ?? users[0];
+  return runtimeUsers.find((user) => user.id === userId) ?? users.find((user) => user.id === userId) ?? users[0];
 }
 
 function buildStatsScope(label: string, picks: Pick[], slips: SlipHistoryItem[], filter: (value: string) => boolean) {
@@ -175,7 +184,7 @@ function buildStatsScope(label: string, picks: Pick[], slips: SlipHistoryItem[],
       profit,
       roi: staked > 0 ? roundUnits((profit / staked) * 100) : 0
     },
-    byViewer: users.map((user) => {
+    byViewer: runtimeUsers.map((user) => {
       const submitted = scopePicks.filter((pick) => pick.userId === user.id).length;
       const selected = scopePicks.filter((pick) => selectedIds.has(pick.id) && pick.userId === user.id).length;
       let settled = 0;
@@ -224,7 +233,7 @@ function buildSlipTimeline(slips: SlipHistoryItem[], filter: (value: string) => 
 }
 
 function buildLeaderboard(scope: StatsScope) {
-  return users
+  return runtimeUsers
     .map((user) => {
       const row = scope.byViewer.find((viewerRow) => viewerRow.userId === user.id);
       return {
@@ -260,6 +269,10 @@ function TeamLogo({ src, name }: { src?: string; name: string }) {
 export function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeUserId, setActiveUserId] = useState("u-serginho");
+  const [authProfile, setAuthProfile] = useState<User | null>(null);
+  const [remoteProfiles, setRemoteProfiles] = useState<User[]>([]);
+  const [authStatus, setAuthStatus] = useState<SyncStatus>("loading");
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [matches, setMatches] = useState<Match[]>(() => readStoredValue<Match[]>(matchesCacheKey, fallbackMatches));
   const [selectedMatchId, setSelectedMatchId] = useState("");
   const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty" | "fallback">(() => (
@@ -294,7 +307,7 @@ export function App() {
     if (matches.length > 0) {
       const upcomingMatches = filterUpcomingScheduledMatches(matches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
-      if (picks.length === 0) setPicks(createStarterPicks(upcomingMatches));
+      if (!isSupabaseConfigured && picks.length === 0) setPicks(createStarterPicks(upcomingMatches));
       return;
     }
     void syncTodayMatches();
@@ -305,6 +318,108 @@ export function App() {
   useEffect(() => writeStoredValue(votesCacheKey, votes), [votes]);
   useEffect(() => writeStoredValue(slipCacheKey, dailySlip), [dailySlip]);
   useEffect(() => writeStoredValue(slipHistoryCacheKey, slipHistory), [slipHistory]);
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthStatus("error");
+      return;
+    }
+
+    let mounted = true;
+
+    async function hydrateAuth() {
+      setAuthStatus("loading");
+      const { data, error } = await supabase!.auth.getSession();
+      if (!mounted) return;
+      if (error || !data.session?.user) {
+        setIsLoggedIn(false);
+        setAuthProfile(null);
+        setAuthStatus("idle");
+        return;
+      }
+
+      const metadata = data.session.user.user_metadata;
+      const displayName = metadata.preferred_username ?? metadata.user_name ?? metadata.name ?? "Viewer Twitch";
+      const twitchId = metadata.provider_id ?? data.session.user.identities?.[0]?.id ?? null;
+      const avatarUrl = metadata.avatar_url ?? metadata.picture ?? null;
+      const profile: User = {
+        id: data.session.user.id,
+        displayName,
+        role: "viewer",
+        avatarColor: "#16d782"
+      };
+
+      try {
+        await saveProfile(profile, twitchId, avatarUrl);
+      } catch (profileError) {
+        console.error("Failed to sync Twitch profile", profileError);
+      }
+
+      if (!mounted) return;
+      setAuthProfile(profile);
+      setActiveUserId(profile.id);
+      setIsLoggedIn(true);
+      setAuthStatus("ready");
+    }
+
+    void hydrateAuth();
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      if (!session?.user) {
+        setIsLoggedIn(false);
+        setAuthProfile(null);
+        setRemoteProfiles([]);
+        setAuthStatus("idle");
+        return;
+      }
+      void hydrateAuth();
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const mergedUsers = mergeById([...users, ...remoteProfiles, ...(authProfile ? [authProfile] : [])]);
+    setRuntimeUsers(mergedUsers);
+  }, [authProfile, remoteProfiles]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !isSupabaseConfigured) return;
+
+    let mounted = true;
+    async function loadSharedState() {
+      setSyncStatus("loading");
+      try {
+        const remote = await loadRemoteState(tipDay);
+        if (!mounted) return;
+        setRemoteProfiles(remote.profiles);
+        if (remote.matches.length > 0) {
+          setMatches(remote.matches);
+          setSelectedMatchId(filterUpcomingScheduledMatches(remote.matches)[0]?.id ?? "");
+          setMatchSync("live");
+        } else {
+          setMatches([]);
+          setMatchSync("empty");
+        }
+        setPicks(remote.picks);
+        setVotes(remote.votes);
+        if (remote.dailySlip) setDailySlip(remote.dailySlip);
+        setSlipHistory(remote.slipHistory);
+        setSyncStatus("ready");
+      } catch (error) {
+        console.error("Failed to load Supabase state", error);
+        if (mounted) setSyncStatus("error");
+      }
+    }
+
+    void loadSharedState();
+    return () => {
+      mounted = false;
+    };
+  }, [isLoggedIn]);
 
   useEffect(() => {
     const pendingSlips = slipHistory.filter((slip) => slip.settlementStatus === "pending");
@@ -343,7 +458,8 @@ export function App() {
     }
   }
 
-  const activeUser = userById(activeUserId);
+  const remoteActiveProfile = remoteProfiles.find((profile) => profile.id === activeUserId);
+  const activeUser = remoteActiveProfile ?? authProfile ?? userById(activeUserId);
   const isStreamer = activeUser.role === "streamer";
   const scheduledMatches = useMemo(() => filterUpcomingScheduledMatches(matches), [matches]);
   const competitionOptions = useMemo(
@@ -556,6 +672,15 @@ export function App() {
     };
 
     setPicks((current) => [nextPick, ...current]);
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void savePick(tipDay, nextPick)
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to save pick", error);
+          setSyncStatus("error");
+        });
+    }
     setPopup({
       title: "Pick registada",
       body: `${nextPick.selection} ficou guardada no teu historico e ja aparece na comunidade para votacao.`
@@ -567,11 +692,21 @@ export function App() {
   function castVote(pickId: string, type: VoteType) {
     const pick = picks.find((item) => item.id === pickId);
     if (!pick || pick.userId === activeUserId) return;
+    const nextVote = { pickId, userId: activeUserId, type };
 
     setVotes((current) => [
       ...current.filter((voteItem) => !(voteItem.pickId === pickId && voteItem.userId === activeUserId)),
-      { pickId, userId: activeUserId, type }
+      nextVote
     ]);
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void saveVote(nextVote)
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to save vote", error);
+          setSyncStatus("error");
+        });
+    }
   }
 
   function generateSlip() {
@@ -596,11 +731,21 @@ export function App() {
       pickIds: dailySlip.pickIds.length > 0 ? dailySlip.pickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
       generatedAt: publishedAt
     };
+    const historySlip = { ...nextSlip, id: historyId, publishedAt };
     setDailySlip(nextSlip);
     setSlipHistory((current) => [
-      { ...nextSlip, id: historyId, publishedAt },
+      historySlip,
       ...current
     ]);
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void saveSlip(tipDay, historySlip)
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to save slip", error);
+          setSyncStatus("error");
+        });
+    }
     setSelectedResolveSlipId(historyId);
   }
 
@@ -646,13 +791,23 @@ export function App() {
     const settlementStatus: PickStatus = slipPicks.some((pick) => pick.status === "pending")
       ? "pending"
       : profit > 0 ? "won" : profit < 0 ? "lost" : "void";
+    const nextSlip = { ...slip, settlementStatus, profit };
 
     setPicks(nextPicks);
     setSlipHistory((current) =>
-      current.map((item) => (item.id === slipId ? { ...item, settlementStatus, profit } : item))
+      current.map((item) => (item.id === slipId ? nextSlip : item))
     );
     if (slip.generatedAt === dailySlip.generatedAt) {
       setDailySlip((current) => ({ ...current, settlementStatus, profit }));
+    }
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void saveSettlement(nextSlip, slipPicks)
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to save settlement", error);
+          setSyncStatus("error");
+        });
     }
   }
 
@@ -664,11 +819,21 @@ export function App() {
       .filter((pick): pick is Pick => Boolean(pick));
     const odds = slipPicks.reduce((total, pick) => total * pick.odds, 1);
     const profit = calculateProfit(status, slip.combinedStake, odds);
+    const nextSlip = { ...slip, settlementStatus: status, profit };
     setSlipHistory((current) =>
-      current.map((item) => (item.id === slipId ? { ...item, settlementStatus: status, profit } : item))
+      current.map((item) => (item.id === slipId ? nextSlip : item))
     );
     if (slip.generatedAt === dailySlip.generatedAt) {
       setDailySlip((current) => ({ ...current, settlementStatus: status, profit }));
+    }
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void saveSettlement(nextSlip, slipPicks)
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to save combined settlement", error);
+          setSyncStatus("error");
+        });
     }
   }
 
@@ -686,9 +851,27 @@ export function App() {
     });
   }
 
-  function loginAs(role: "viewer" | "streamer") {
-    setActiveUserId(role === "streamer" ? "u-serginho" : "u-xico");
-    setIsLoggedIn(true);
+  async function loginWithTwitch() {
+    if (!supabase) return;
+    setAuthStatus("loading");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "twitch",
+      options: {
+        redirectTo: getSiteUrl()
+      }
+    });
+    if (error) {
+      console.error("Twitch login failed", error);
+      setAuthStatus("error");
+    }
+  }
+
+  async function logout() {
+    if (supabase) await supabase.auth.signOut();
+    setIsLoggedIn(false);
+    setAuthProfile(null);
+    setRemoteProfiles([]);
+    setActiveUserId("u-serginho");
   }
 
   function renderPickCard(pick: Pick) {
@@ -757,17 +940,16 @@ export function App() {
             <img src="/serginhobet-icon.svg" alt="" />
           </div>
           <h1>SerginhoBet</h1>
-          <p>Entra como viewer para sugerir e votar tips, ou como streamer para gerir as escolhas finais.</p>
+          <p>Entra obrigatoriamente com Twitch para sugerir, votar e acompanhar a aposta da comunidade.</p>
           <div className="login-choice-grid">
-            <button onClick={() => loginAs("viewer")}>
-              <UserRound size={22} />
-              Entrar como Viewer
-            </button>
-            <button className="streamer-login" onClick={() => loginAs("streamer")}>
-              <ShieldCheck size={22} />
-              Entrar como Streamer
+            <button onClick={loginWithTwitch} disabled={!isSupabaseConfigured || authStatus === "loading"}>
+              <LogIn size={22} />
+              Entrar com Twitch
             </button>
           </div>
+          {!isSupabaseConfigured ? (
+            <p className="login-warning">Configura VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar o login Twitch em produção.</p>
+          ) : null}
         </section>
       </main>
     );
@@ -796,13 +978,10 @@ export function App() {
             <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
           </div>
           <LogIn size={18} />
-          <select value={activeUserId} onChange={(event) => setActiveUserId(event.target.value)}>
-            {users.filter((user) => (isStreamer ? user.role === "streamer" : user.role !== "streamer")).map((user) => (
-              <option key={user.id} value={user.id}>{user.displayName}</option>
-            ))}
-          </select>
+          <span className="auth-name">{activeUser.displayName}</span>
           <span className="role-pill">{activeUser.role}</span>
-          <button className="logout-button" onClick={() => setIsLoggedIn(false)}>Sair</button>
+          <span className={`sync-pill ${syncStatus}`}>{syncStatus === "ready" ? "online" : syncStatus}</span>
+          <button className="logout-button" onClick={logout}>Sair</button>
         </div>
       </header>
 
@@ -1938,7 +2117,7 @@ function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
       </div>
       <div className="stats-table">
         <div className="stats-table-head"><span>Pessoa</span><span>Tips</span><span>Finais</span><span>Resolvidas</span><span>Stake</span><span>Lucro</span><span>ROI</span></div>
-        {users.map((user) => {
+        {runtimeUsers.map((user) => {
           const row = scope.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
             submitted: 0,
             selected: 0,
@@ -2040,7 +2219,7 @@ function StatsPage({
         <div className="section-title"><Trophy size={18} /><h3>Performance por pessoa</h3></div>
         <div className="stats-table">
           <div className="stats-table-head"><span>Pessoa</span><span>Tips</span><span>Finais</span><span>Resolvidas</span><span>Stake</span><span>Lucro</span><span>ROI</span></div>
-          {users.map((user) => {
+          {runtimeUsers.map((user) => {
             const row = dailyStats.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
               submitted: 0,
               selected: 0,
