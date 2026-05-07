@@ -163,6 +163,7 @@ export function App() {
   const [slipHistory, setSlipHistory] = useState<SlipHistoryItem[]>(() => readStoredValue<SlipHistoryItem[]>(slipHistoryCacheKey, []));
   const [popup, setPopup] = useState<{ title: string; body: string } | null>(null);
   const [tipModalMatchId, setTipModalMatchId] = useState<string | null>(null);
+  const [selectedResolveSlipId, setSelectedResolveSlipId] = useState("");
   const [activePage, setActivePage] = useState<Page>("games");
   const [competitionFilter, setCompetitionFilter] = useState("all");
   const [formState, setFormState] = useState({
@@ -189,6 +190,16 @@ export function App() {
   useEffect(() => writeStoredValue(votesCacheKey, votes), [votes]);
   useEffect(() => writeStoredValue(slipCacheKey, dailySlip), [dailySlip]);
   useEffect(() => writeStoredValue(slipHistoryCacheKey, slipHistory), [slipHistory]);
+
+  useEffect(() => {
+    if (slipHistory.length === 0) {
+      setSelectedResolveSlipId("");
+      return;
+    }
+    if (!slipHistory.some((slip) => slip.id === selectedResolveSlipId)) {
+      setSelectedResolveSlipId(slipHistory[0].id);
+    }
+  }, [selectedResolveSlipId, slipHistory]);
 
   async function syncTodayMatches(forceRefresh = false) {
     setMatchSync("loading");
@@ -245,8 +256,13 @@ export function App() {
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
     .filter((pick): pick is Pick => Boolean(pick));
+  const selectedResolveSlip = slipHistory.find((slip) => slip.id === selectedResolveSlipId) ?? slipHistory[0];
+  const selectedResolvePicks = selectedResolveSlip
+    ? selectedResolveSlip.pickIds.map((pickId) => picks.find((pick) => pick.id === pickId)).filter((pick): pick is Pick => Boolean(pick))
+    : [];
 
   const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
+  const selectedResolveCombinedOdds = selectedResolvePicks.reduce((total, pick) => total * pick.odds, 1);
   const multiplesStake = topSlipPicks.length * dailySlip.multiplesStake;
   const isPublishedSlip = dailySlip.status === "published" && topSlipPicks.length > 0;
   const combinedSlipSettled = dailySlip.mode === "combined" && dailySlip.settlementStatus !== "pending";
@@ -405,6 +421,7 @@ export function App() {
 
   function publishSlip() {
     const publishedAt = new Date().toISOString();
+    const historyId = `slip-${Date.now()}`;
     const nextSlip: DailySlip = {
       ...dailySlip,
       status: "published",
@@ -415,9 +432,10 @@ export function App() {
     };
     setDailySlip(nextSlip);
     setSlipHistory((current) => [
-      { ...nextSlip, id: `slip-${Date.now()}`, publishedAt },
+      { ...nextSlip, id: historyId, publishedAt },
       ...current
     ]);
+    setSelectedResolveSlipId(historyId);
   }
 
   function toggleFinalPick(pickId: string) {
@@ -447,22 +465,45 @@ export function App() {
     setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, multiplesStake: value }));
   }
 
-  function settlePick(pickId: string, status: PickStatus) {
-    setPicks((current) =>
-      current.map((pick) => {
-        if (pick.id !== pickId) return pick;
-        const finalStake = dailySlip.mode === "multiples" && dailySlip.pickIds.includes(pickId) ? dailySlip.multiplesStake : pick.stake;
-        return { ...pick, stake: finalStake, status, profit: calculateProfit(status, finalStake, pick.odds) };
-      })
+  function settlePick(slipId: string, pickId: string, status: PickStatus) {
+    const slip = slipHistory.find((item) => item.id === slipId);
+    if (!slip) return;
+    const nextPicks = picks.map((pick) => {
+      if (pick.id !== pickId) return pick;
+      const finalStake = slip.mode === "multiples" && slip.pickIds.includes(pickId) ? slip.multiplesStake : pick.stake;
+      return { ...pick, stake: finalStake, status, profit: calculateProfit(status, finalStake, pick.odds) };
+    });
+    const slipPicks = slip.pickIds
+      .map((id) => nextPicks.find((pick) => pick.id === id))
+      .filter((pick): pick is Pick => Boolean(pick));
+    const profit = roundUnits(slipPicks.reduce((total, pick) => total + pick.profit, 0));
+    const settlementStatus: PickStatus = slipPicks.some((pick) => pick.status === "pending")
+      ? "pending"
+      : profit > 0 ? "won" : profit < 0 ? "lost" : "void";
+
+    setPicks(nextPicks);
+    setSlipHistory((current) =>
+      current.map((item) => (item.id === slipId ? { ...item, settlementStatus, profit } : item))
     );
+    if (slip.generatedAt === dailySlip.generatedAt) {
+      setDailySlip((current) => ({ ...current, settlementStatus, profit }));
+    }
   }
 
-  function settleCombinedSlip(status: PickStatus) {
-    const profit = calculateProfit(status, dailySlip.combinedStake, combinedOdds);
-    setDailySlip((slip) => ({ ...slip, settlementStatus: status, profit }));
+  function settleCombinedSlip(slipId: string, status: PickStatus) {
+    const slip = slipHistory.find((item) => item.id === slipId);
+    if (!slip) return;
+    const slipPicks = slip.pickIds
+      .map((pickId) => picks.find((pick) => pick.id === pickId))
+      .filter((pick): pick is Pick => Boolean(pick));
+    const odds = slipPicks.reduce((total, pick) => total * pick.odds, 1);
+    const profit = calculateProfit(status, slip.combinedStake, odds);
     setSlipHistory((current) =>
-      current.map((item) => (item.generatedAt === dailySlip.generatedAt ? { ...item, settlementStatus: status, profit } : item))
+      current.map((item) => (item.id === slipId ? { ...item, settlementStatus: status, profit } : item))
     );
+    if (slip.generatedAt === dailySlip.generatedAt) {
+      setDailySlip((current) => ({ ...current, settlementStatus: status, profit }));
+    }
   }
 
   function loginAs(role: "viewer" | "streamer") {
@@ -779,6 +820,7 @@ export function App() {
         <ViewerBetsPage
           user={activeUser}
           picks={picks.filter((pick) => pick.userId === activeUserId)}
+          allPicks={picks}
           finalPicks={topSlipPicks}
           matches={matches}
           dailySlip={dailySlip}
@@ -791,10 +833,13 @@ export function App() {
 
       {activePage === "resolve" && isStreamer ? (
         <ResolvePage
-          dailySlip={dailySlip}
-          picks={topSlipPicks}
+          selectedSlip={selectedResolveSlip}
+          slipHistory={slipHistory}
+          picks={selectedResolvePicks}
           matches={matches}
-          combinedOdds={combinedOdds}
+          combinedOdds={selectedResolveCombinedOdds}
+          selectedSlipId={selectedResolveSlipId}
+          onSelectSlip={setSelectedResolveSlipId}
           onSettlePick={settlePick}
           onSettleCombined={settleCombinedSlip}
         />
@@ -881,6 +926,7 @@ function TipModal({
 function ViewerBetsPage({
   user,
   picks,
+  allPicks,
   finalPicks,
   matches,
   dailySlip,
@@ -891,6 +937,7 @@ function ViewerBetsPage({
 }: {
   user: User;
   picks: Pick[];
+  allPicks: Pick[];
   finalPicks: Pick[];
   matches: Match[];
   dailySlip: DailySlip;
@@ -926,6 +973,48 @@ function ViewerBetsPage({
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   const pendingSlipHistory = slipHistory.filter((item) => item.settlementStatus === "pending");
   const [showFinalPicks, setShowFinalPicks] = useState(false);
+  const [expandedSlipIds, setExpandedSlipIds] = useState<Set<string>>(() => new Set());
+
+  function toggleExpandedSlip(slipId: string) {
+    setExpandedSlipIds((current) => {
+      const next = new Set(current);
+      if (next.has(slipId)) next.delete(slipId);
+      else next.add(slipId);
+      return next;
+    });
+  }
+
+  function renderSlipDetailList(slip: SlipHistoryItem) {
+    return (
+      <div className="slip-detail-list">
+        {slip.pickIds.map((pickId, index) => {
+          const pick = allPicks.find((item) => item.id === pickId);
+          if (!pick) {
+            return (
+              <div className="slip-detail-row" key={pickId}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>Pick indisponivel</strong>
+                  <small>ID {pickId}</small>
+                </div>
+              </div>
+            );
+          }
+          const match = matches.find((item) => item.id === pick.matchId);
+          const author = userById(pick.userId);
+          return (
+            <div className="slip-detail-row" key={pick.id}>
+              <span>{index + 1}</span>
+              <div>
+                <strong>{pick.selection}</strong>
+                <small>{author.displayName} - {match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <section className="viewer-bets-page">
@@ -993,12 +1082,15 @@ function ViewerBetsPage({
         </div>
         <div className="viewer-pending-list">
           {pendingSlipHistory.map((slip, index) => (
-            <article className="viewer-pending-row" key={slip.id}>
-              <div>
-                <strong>Boletim #{slipHistory.length - index}</strong>
-                <span>{slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
-              </div>
-              <b>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</b>
+            <article className="slip-history-card" key={slip.id}>
+              <button className="viewer-pending-row slip-expand-toggle" onClick={() => toggleExpandedSlip(slip.id)}>
+                <div>
+                  <strong>Boletim #{slipHistory.length - index}</strong>
+                  <span>{slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
+                </div>
+                <b>{expandedSlipIds.has(slip.id) ? "Esconder" : `${slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}`}</b>
+              </button>
+              {expandedSlipIds.has(slip.id) ? renderSlipDetailList(slip) : null}
             </article>
           ))}
           {pendingPicks.map((pick) => {
@@ -1032,14 +1124,17 @@ function ViewerBetsPage({
         </div>
         <div className="viewer-history-list">
           {slipHistory.map((slip, index) => (
-            <article className="viewer-history-row slip-history-row" key={slip.id}>
-              <div>
-                <strong>Boletim publicado #{slipHistory.length - index}</strong>
-                <span>{new Date(slip.publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
-              </div>
-              <small>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</small>
-              <div className={`status ${slip.settlementStatus}`}>{statusLabel(slip.settlementStatus)}</div>
-              <b>{slip.profit >= 0 ? "+" : ""}{slip.profit.toFixed(2)}u</b>
+            <article className="slip-history-card" key={slip.id}>
+              <button className="viewer-history-row slip-history-row slip-expand-toggle" onClick={() => toggleExpandedSlip(slip.id)}>
+                <div>
+                  <strong>Boletim publicado #{slipHistory.length - index}</strong>
+                  <span>{new Date(slip.publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
+                </div>
+                <small>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</small>
+                <div className={`status ${slip.settlementStatus}`}>{statusLabel(slip.settlementStatus)}</div>
+                <b>{expandedSlipIds.has(slip.id) ? "Esconder" : `${slip.profit >= 0 ? "+" : ""}${slip.profit.toFixed(2)}u`}</b>
+              </button>
+              {expandedSlipIds.has(slip.id) ? renderSlipDetailList(slip) : null}
             </article>
           ))}
           {resolvedPicks.map((pick) => {
@@ -1187,29 +1282,35 @@ function SlipPanel({
 }
 
 function ResolvePage({
-  dailySlip,
+  selectedSlip,
+  slipHistory,
   picks,
   matches,
   combinedOdds,
+  selectedSlipId,
+  onSelectSlip,
   onSettlePick,
   onSettleCombined
 }: {
-  dailySlip: DailySlip;
+  selectedSlip?: SlipHistoryItem;
+  slipHistory: SlipHistoryItem[];
   picks: Pick[];
   matches: Match[];
   combinedOdds: number;
-  onSettlePick: (pickId: string, status: PickStatus) => void;
-  onSettleCombined: (status: PickStatus) => void;
+  selectedSlipId: string;
+  onSelectSlip: (slipId: string) => void;
+  onSettlePick: (slipId: string, pickId: string, status: PickStatus) => void;
+  onSettleCombined: (slipId: string, status: PickStatus) => void;
 }) {
-  const combinedReturn = roundUnits(dailySlip.combinedStake * combinedOdds);
+  const combinedReturn = selectedSlip ? roundUnits(selectedSlip.combinedStake * combinedOdds) : 0;
   const orderedPicks = [...picks].sort((left, right) => {
     if (left.status === "pending" && right.status !== "pending") return -1;
     if (left.status !== "pending" && right.status === "pending") return 1;
     return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
   });
-  const canResolve = dailySlip.status === "published" && orderedPicks.length > 0;
+  const canResolve = Boolean(selectedSlip) && orderedPicks.length > 0;
 
-  if (!canResolve) {
+  if (!canResolve || !selectedSlip) {
     return (
       <section className="resolve-page">
         <section className="panel resolve-panel">
@@ -1227,21 +1328,35 @@ function ResolvePage({
     );
   }
 
-  if (dailySlip.mode === "combined") {
+  const slipSelector = (
+    <label className="resolve-slip-picker">
+      Boletim a resolver
+      <select value={selectedSlipId} onChange={(event) => onSelectSlip(event.target.value)}>
+        {slipHistory.map((slip, index) => (
+          <option value={slip.id} key={slip.id}>
+            Boletim #{slipHistory.length - index} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} - {new Date(slip.publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  if (selectedSlip.mode === "combined") {
     return (
       <section className="resolve-page">
         <section className="panel resolve-panel">
           <div className="section-title spread">
             <div><Activity size={18} /><h3>Resolver combinada</h3></div>
-            <span>1 aposta publicada</span>
+            <span>{slipHistory.length} publicadas</span>
           </div>
+          {slipSelector}
           <article className="combined-resolve-card">
             <div className="resolve-slip-summary">
               <div>
                 <strong>Combinada da comunidade</strong>
                 <span>Se uma tip falhar, a combinada inteira fica perdida.</span>
               </div>
-              <div className={`status ${dailySlip.settlementStatus}`}>{statusLabel(dailySlip.settlementStatus)}</div>
+              <div className={`status ${selectedSlip.settlementStatus}`}>{statusLabel(selectedSlip.settlementStatus)}</div>
             </div>
             <div className="combined-resolve-list">
               {orderedPicks.map((pick, index) => {
@@ -1259,11 +1374,11 @@ function ResolvePage({
               })}
             </div>
             <div className="resolve-slip-footer">
-              <span>Stake <b>{dailySlip.combinedStake.toFixed(2)}u</b></span>
+              <span>Stake <b>{selectedSlip.combinedStake.toFixed(2)}u</b></span>
               <span>Odd combinada <b>{combinedOdds.toFixed(2)}</b></span>
               <span>Retorno possivel <b>{combinedReturn.toFixed(2)}u</b></span>
-              <span>Resultado <b>{dailySlip.profit >= 0 ? "+" : ""}{dailySlip.profit.toFixed(2)}u</b></span>
-              <select value={dailySlip.settlementStatus} onChange={(event) => onSettleCombined(event.target.value as PickStatus)}>
+              <span>Resultado <b>{selectedSlip.profit >= 0 ? "+" : ""}{selectedSlip.profit.toFixed(2)}u</b></span>
+              <select value={selectedSlip.settlementStatus} onChange={(event) => onSettleCombined(selectedSlip.id, event.target.value as PickStatus)}>
                 <option value="pending">Pendente</option>
                 <option value="won">Ganha</option>
                 <option value="lost">Perdida</option>
@@ -1283,6 +1398,7 @@ function ResolvePage({
           <div><Activity size={18} /><h3>Resolver multiplas</h3></div>
           <span>{orderedPicks.filter((pick) => pick.status === "pending").length} pendentes</span>
         </div>
+        {slipSelector}
         <div className="resolve-list">
           {orderedPicks.map((pick) => {
             const match = matches.find((item) => item.id === pick.matchId);
@@ -1298,10 +1414,10 @@ function ResolvePage({
                 </div>
                 <div>
                   <strong>{pick.selection}</strong>
-                  <small>{pick.marketType} - @{pick.odds.toFixed(2)} - {dailySlip.multiplesStake}u</small>
+                  <small>{pick.marketType} - @{pick.odds.toFixed(2)} - {selectedSlip.multiplesStake}u</small>
                 </div>
                 <div className={`status ${pick.status}`}>{statusLabel(pick.status)}</div>
-                <select value={pick.status} onChange={(event) => onSettlePick(pick.id, event.target.value as PickStatus)}>
+                <select value={pick.status} onChange={(event) => onSettlePick(selectedSlip.id, pick.id, event.target.value as PickStatus)}>
                   <option value="pending">Pendente</option>
                   <option value="won">Ganha</option>
                   <option value="lost">Perdida</option>

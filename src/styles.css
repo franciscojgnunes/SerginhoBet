@@ -848,6 +848,32 @@ h1 {
   padding: 12px;
 }
 
+.slip-history-card {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.slip-history-card .viewer-pending-row,
+.slip-history-card .viewer-history-row {
+  border: 0;
+  border-radius: 0;
+}
+
+.slip-expand-toggle {
+  color: inherit;
+  justify-content: stretch;
+  min-height: auto;
+  padding: 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.slip-expand-toggle:hover:not(:disabled) {
+  transform: none;
+}
+
 .viewer-pending-row strong,
 .slip-history-row strong {
   color: var(--text);
@@ -867,6 +893,46 @@ h1 {
   background:
     linear-gradient(120deg, rgba(183, 255, 52, 0.08), rgba(22, 215, 130, 0.05)),
     #07150e;
+}
+
+.slip-detail-list {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.slip-detail-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 30px 1fr;
+  padding: 10px;
+}
+
+.slip-detail-row > span {
+  align-items: center;
+  background: var(--lime);
+  border-radius: 8px;
+  color: #06130d;
+  display: inline-flex;
+  font-weight: 950;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.slip-detail-row strong {
+  color: var(--text);
+}
+
+.slip-detail-row small {
+  color: var(--muted);
+  display: block;
+  margin-top: 3px;
 }
 
 .viewer-history-row b {
@@ -1101,6 +1167,7 @@ h1 {
 }
 
 .combined-stake-field input,
+.resolve-slip-picker select,
 .resolve-row select,
 .resolve-slip-footer select {
   background: #07150e;
@@ -1111,6 +1178,16 @@ h1 {
   outline: none;
   padding: 0.65rem 0.75rem;
   width: 100%;
+}
+
+.resolve-slip-picker {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.74rem;
+  font-weight: 900;
+  gap: 6px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
 }
 
 .candidate-list {
