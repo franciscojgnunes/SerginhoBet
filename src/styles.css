@@ -16,6 +16,75 @@
   --green: #16d782;
   --lime: #b7ff34;
   --danger: #ff6b6b;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-snap: cubic-bezier(0.2, 0.9, 0.2, 1.15);
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(183, 255, 52, 0);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(183, 255, 52, 0.22);
+  }
+}
+
+@keyframes status-pop {
+  from {
+    transform: scale(0.88);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes expand-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 * {
@@ -50,11 +119,20 @@ button {
   justify-content: center;
   min-height: 40px;
   padding: 0 0.9rem;
-  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  transition:
+    background 180ms var(--ease-out),
+    border-color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out),
+    color 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
 }
 
 button:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
 }
 
 button:disabled {
@@ -70,6 +148,7 @@ button:disabled {
 
 .login-screen {
   align-items: center;
+  animation: page-enter 420ms var(--ease-out) both;
   display: grid;
   min-height: 100vh;
   padding: 24px;
@@ -77,6 +156,7 @@ button:disabled {
 }
 
 .login-hero {
+  animation: card-rise 520ms var(--ease-out) both;
   background:
     linear-gradient(145deg, rgba(183, 255, 52, 0.12), rgba(22, 215, 130, 0.06)),
     rgba(14, 36, 24, 0.94);
@@ -196,11 +276,32 @@ h1 {
   border: 1px solid var(--line);
   color: var(--muted);
   min-height: 38px;
+  position: relative;
+  overflow: hidden;
 }
 
 .page-tabs button.active {
   background: var(--lime);
   color: #06130d;
+  box-shadow: 0 10px 26px rgba(183, 255, 52, 0.18);
+  transform: translateY(-1px);
+}
+
+.page-tabs button::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent);
+  content: "";
+  height: 100%;
+  left: -120%;
+  position: absolute;
+  top: 0;
+  transform: skewX(-18deg);
+  transition: left 440ms var(--ease-out);
+  width: 70%;
+}
+
+.page-tabs button:hover::after,
+.page-tabs button.active::after {
+  left: 120%;
 }
 
 .login-panel select,
@@ -261,6 +362,7 @@ h1 {
 }
 
 .hero-grid {
+  animation: page-enter 360ms var(--ease-out) both;
   background:
     linear-gradient(120deg, rgba(183, 255, 52, 0.12), transparent 42%),
     var(--panel);
@@ -419,6 +521,7 @@ h1 {
 
 .games-page {
   align-items: start;
+  animation: page-enter 320ms var(--ease-out) both;
   display: grid;
   gap: 18px;
   grid-template-columns: minmax(0, 1fr);
@@ -489,11 +592,18 @@ h1 {
   min-height: 152px;
   padding: 14px;
   text-align: center;
-  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  animation: card-rise 320ms var(--ease-out) both;
+  transition:
+    background 180ms var(--ease-out),
+    border-color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
 }
 
 .game-card:hover {
-  transform: translateY(-1px);
+  border-color: var(--line-strong);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+  transform: translateY(-3px);
 }
 
 .game-card:focus-visible {
@@ -506,6 +616,7 @@ h1 {
   background: rgba(22, 215, 130, 0.16);
   border-color: var(--lime);
   box-shadow: inset 0 0 0 1px rgba(183, 255, 52, 0.38);
+  animation: glow-pulse 1300ms ease-in-out 1;
 }
 
 .game-competition {
@@ -598,6 +709,11 @@ h1 {
   width: 100%;
 }
 
+.game-tip-button:hover,
+.detail-tip-button:hover {
+  box-shadow: 0 12px 28px rgba(183, 255, 52, 0.2);
+}
+
 .detail-tip-button {
   margin-bottom: 14px;
   min-height: 48px;
@@ -681,6 +797,7 @@ h1 {
 
 .community-page {
   align-items: start;
+  animation: page-enter 320ms var(--ease-out) both;
   display: grid;
   gap: 18px;
   grid-template-columns: minmax(0, 1fr) 390px;
@@ -691,12 +808,14 @@ h1 {
 }
 
 .stats-page {
+  animation: page-enter 320ms var(--ease-out) both;
   display: grid;
   gap: 18px;
   grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.85fr);
 }
 
 .viewer-bets-page {
+  animation: page-enter 320ms var(--ease-out) both;
   display: grid;
   gap: 18px;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
@@ -806,6 +925,7 @@ h1 {
 
 .viewer-final-card,
 .viewer-history-row {
+  animation: card-rise 300ms var(--ease-out) both;
   background: #07150e;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -839,6 +959,7 @@ h1 {
 
 .viewer-pending-row {
   align-items: center;
+  animation: card-rise 300ms var(--ease-out) both;
   background: #07150e;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -849,6 +970,7 @@ h1 {
 }
 
 .slip-history-card {
+  animation: card-rise 300ms var(--ease-out) both;
   background: #07150e;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -896,6 +1018,7 @@ h1 {
 }
 
 .slip-detail-list {
+  animation: expand-down 240ms var(--ease-out) both;
   border-top: 1px solid var(--line);
   display: grid;
   gap: 8px;
@@ -904,6 +1027,7 @@ h1 {
 
 .slip-detail-row {
   align-items: center;
+  animation: card-rise 260ms var(--ease-out) both;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1012,11 +1136,20 @@ h1 {
 }
 
 .panel {
+  animation: card-rise 360ms var(--ease-out) both;
   background: rgba(14, 36, 24, 0.92);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
   padding: 16px;
+  transition:
+    border-color 220ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    transform 220ms var(--ease-out);
+}
+
+.panel:hover {
+  border-color: rgba(183, 255, 52, 0.28);
 }
 
 .section-title,
@@ -1197,6 +1330,7 @@ h1 {
 
 .candidate-row {
   align-items: center;
+  animation: card-rise 300ms var(--ease-out) both;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1209,6 +1343,7 @@ h1 {
 .candidate-row.selected {
   background: rgba(183, 255, 52, 0.12);
   border-color: var(--lime);
+  animation: glow-pulse 1100ms ease-in-out 1;
 }
 
 .candidate-row strong,
@@ -1265,6 +1400,7 @@ h1 {
 }
 
 .pick-card {
+  animation: card-rise 320ms var(--ease-out) both;
   background: #09190f;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1274,6 +1410,7 @@ h1 {
 .pick-card.final {
   border-color: var(--lime);
   box-shadow: inset 4px 0 0 var(--lime);
+  animation: glow-pulse 1200ms ease-in-out 1;
 }
 
 .pick-header,
@@ -1346,6 +1483,7 @@ h1 {
 }
 
 .status {
+  animation: status-pop 160ms var(--ease-snap) both;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 950;
@@ -1523,6 +1661,7 @@ h1 {
 }
 
 .resolve-page {
+  animation: page-enter 320ms var(--ease-out) both;
   margin: 0 auto;
   max-width: 1280px;
 }
@@ -1534,6 +1673,7 @@ h1 {
 
 .resolve-empty {
   align-items: center;
+  animation: card-rise 360ms var(--ease-out) both;
   background: #07150e;
   border: 1px dashed var(--line-strong);
   border-radius: 8px;
@@ -1552,6 +1692,7 @@ h1 {
 }
 
 .combined-resolve-card {
+  animation: card-rise 360ms var(--ease-out) both;
   background: #07150e;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
@@ -1586,6 +1727,7 @@ h1 {
 
 .combined-resolve-item {
   align-items: center;
+  animation: card-rise 280ms var(--ease-out) both;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1640,6 +1782,7 @@ h1 {
 
 .resolve-row {
   align-items: center;
+  animation: card-rise 280ms var(--ease-out) both;
   background: #07150e;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1647,6 +1790,12 @@ h1 {
   gap: 12px;
   grid-template-columns: minmax(180px, 1.1fr) minmax(240px, 1.4fr) auto 170px;
   padding: 12px;
+}
+
+.resolve-row:has(select:focus),
+.combined-resolve-card:has(select:focus) {
+  border-color: var(--lime);
+  box-shadow: 0 0 0 3px rgba(183, 255, 52, 0.1);
 }
 
 .resolve-row strong {
@@ -1749,9 +1898,19 @@ h1 {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 4;
+  stroke-dasharray: 900;
+  stroke-dashoffset: 900;
+  animation: chart-draw 900ms var(--ease-out) forwards;
+}
+
+@keyframes chart-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .chart-dot {
+  animation: status-pop 260ms var(--ease-snap) both;
   stroke: #06130d;
   stroke-width: 3;
 }
@@ -1883,6 +2042,7 @@ h1 {
 
 .popup-backdrop {
   align-items: center;
+  animation: modal-backdrop-in 180ms var(--ease-out) both;
   background: rgba(0, 0, 0, 0.62);
   display: grid;
   inset: 0;
@@ -1894,6 +2054,7 @@ h1 {
 
 .popup-card {
   align-items: center;
+  animation: modal-pop 260ms var(--ease-snap) both;
   background: #07150e;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
@@ -1922,6 +2083,7 @@ h1 {
 }
 
 .tip-modal-card {
+  animation: modal-pop 280ms var(--ease-snap) both;
   background: #07150e;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
@@ -2166,5 +2328,16 @@ h1 {
 
   .login-choice-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
   }
 }
