@@ -166,6 +166,7 @@ export function App() {
   const [selectedResolveSlipId, setSelectedResolveSlipId] = useState("");
   const [activePage, setActivePage] = useState<Page>("games");
   const [competitionFilter, setCompetitionFilter] = useState("all");
+  const [matchSearch, setMatchSearch] = useState("");
   const [formState, setFormState] = useState({
     marketType: "1X2" as MarketType,
     selection: "",
@@ -235,8 +236,19 @@ export function App() {
     [scheduledMatches]
   );
   const visibleMatches = useMemo(
-    () => (competitionFilter === "all" ? scheduledMatches : scheduledMatches.filter((match) => match.competition === competitionFilter)),
-    [competitionFilter, scheduledMatches]
+    () => {
+      const normalizedQuery = matchSearch.trim().toLowerCase();
+      return scheduledMatches.filter((match) => {
+        const matchesCompetition = competitionFilter === "all" || match.competition === competitionFilter;
+        const matchesSearch = normalizedQuery.length === 0
+          || match.competition.toLowerCase().includes(normalizedQuery)
+          || match.homeTeam.toLowerCase().includes(normalizedQuery)
+          || match.awayTeam.toLowerCase().includes(normalizedQuery)
+          || match.country?.toLowerCase().includes(normalizedQuery);
+        return matchesCompetition && matchesSearch;
+      });
+    },
+    [competitionFilter, matchSearch, scheduledMatches]
   );
 
   useEffect(() => {
@@ -282,7 +294,6 @@ export function App() {
       }
     : { ...baseBankroll, exposure: slipExposure };
   const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
-  const suggestedPicks = selectSlipPicks(picks, votes, 8);
   const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
   const displayedDailyStats = dailySlip.mode === "combined" && dailySlip.status === "published"
     ? {
@@ -631,6 +642,15 @@ export function App() {
             <div className="section-title spread games-toolbar">
               <div><CalendarDays size={18} /><h3>Jogos de hoje</h3></div>
               <div className="games-actions">
+                <label className="match-search-field">
+                  <span>Pesquisar</span>
+                  <input
+                    value={matchSearch}
+                    onChange={(event) => setMatchSearch(event.target.value)}
+                    placeholder="Equipa ou campeonato"
+                    aria-label="Pesquisar equipa ou campeonato"
+                  />
+                </label>
                 <select value={competitionFilter} onChange={(event) => setCompetitionFilter(event.target.value)} aria-label="Filtrar competição">
                   {competitionOptions.map((competition) => (
                     <option key={competition} value={competition}>
@@ -783,21 +803,23 @@ export function App() {
                     />
                   </label>
                 )}
-                <div className="candidate-list">
-                  {suggestedPicks.map((pick) => {
+                <div className="candidate-list final-only-list">
+                  {topSlipPicks.map((pick) => {
                     const match = matches.find((item) => item.id === pick.matchId);
                     const author = userById(pick.userId);
-                    const selected = dailySlip.pickIds.includes(pick.id);
                     return (
-                      <div className={`candidate-row ${selected ? "selected" : ""}`} key={pick.id}>
+                      <div className="candidate-row selected" key={pick.id}>
                         <div>
                           <strong>{pick.selection}</strong>
                           <small>{author.displayName} · {match?.homeTeam} vs {match?.awayTeam} · Score {scorePick(pick.id, votes)}</small>
                         </div>
-                        <button onClick={() => toggleFinalPick(pick.id)}>{selected ? "Remover" : "Escolher"}</button>
+                        <button onClick={() => toggleFinalPick(pick.id)}>Remover</button>
                       </div>
                     );
                   })}
+                  {topSlipPicks.length === 0 ? (
+                    <p className="empty-copy">Ainda nÃ£o existem picks finais. Usa "Preencher por votos" ou escolhe uma tip na lista da comunidade.</p>
+                  ) : null}
                 </div>
               </section>
             ) : null}

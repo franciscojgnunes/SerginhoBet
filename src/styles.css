@@ -545,7 +545,8 @@ h1 {
   justify-content: flex-end;
 }
 
-.games-actions select {
+.games-actions select,
+.match-search-field input {
   background: #07150e;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -555,6 +556,29 @@ h1 {
   min-height: 36px;
   outline: none;
   padding: 0 0.75rem;
+}
+
+.match-search-field {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.match-search-field span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.match-search-field input {
+  min-width: 220px;
+}
+
+.match-search-field input:focus,
+.games-actions select:focus {
+  border-color: var(--lime);
+  box-shadow: 0 0 0 3px rgba(183, 255, 52, 0.12);
 }
 
 .games-actions button {
@@ -1326,6 +1350,13 @@ h1 {
 .candidate-list {
   display: grid;
   gap: 8px;
+}
+
+.final-only-list .empty-copy {
+  background: #07150e;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  padding: 12px;
 }
 
 .candidate-row {
@@ -2194,6 +2225,16 @@ h1 {
 
   .page-tabs button {
     flex: 1;
+  }
+
+  .games-actions {
+    justify-content: stretch;
+  }
+
+  .games-actions select,
+  .match-search-field,
+  .match-search-field input {
+    width: 100%;
   }
 
   .stat-grid.wide {
