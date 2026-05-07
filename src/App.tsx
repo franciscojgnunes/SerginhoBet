@@ -389,8 +389,11 @@ export function App() {
     if (!isLoggedIn || !isSupabaseConfigured) return;
 
     let mounted = true;
-    async function loadSharedState() {
-      setSyncStatus("loading");
+    let inFlight = false;
+    async function loadSharedState(showLoading = false) {
+      if (inFlight) return;
+      inFlight = true;
+      if (showLoading) setSyncStatus("loading");
       try {
         const remote = await loadRemoteState(tipDay);
         if (!mounted) return;
@@ -411,12 +414,19 @@ export function App() {
       } catch (error) {
         console.error("Failed to load Supabase state", error);
         if (mounted) setSyncStatus("error");
+      } finally {
+        inFlight = false;
       }
     }
 
-    void loadSharedState();
+    void loadSharedState(true);
+    const refreshTimer = window.setInterval(() => {
+      void loadSharedState(false);
+    }, 8_000);
+
     return () => {
       mounted = false;
+      window.clearInterval(refreshTimer);
     };
   }, [isLoggedIn]);
 
