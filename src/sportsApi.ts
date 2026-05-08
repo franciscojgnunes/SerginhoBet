@@ -181,11 +181,12 @@ export async function fetchMatchesForDates(dates: Date[], options: { forceRefres
 }
 
 async function fetchMatchesForDay(day: string, now: Date) {
-  const apiFootballMatches = await fetchApiFootballMatches(day);
-  if (apiFootballMatches.length > 0) return sortUpcomingMatches(apiFootballMatches, day, now);
-
-  const [espnMatches, sportsDbMatches] = await Promise.all([fetchEspnMatches(day), fetchSportsDbMatches(day)]);
-  return sortUpcomingMatches(buildMatchSlate(espnMatches, sportsDbMatches), day, now);
+  const [apiFootballMatches, espnMatches, sportsDbMatches] = await Promise.all([
+    fetchApiFootballMatches(day),
+    fetchEspnMatches(day),
+    fetchSportsDbMatches(day)
+  ]);
+  return sortUpcomingMatches(buildMatchSlate(apiFootballMatches, buildMatchSlate(espnMatches, sportsDbMatches)), day, now);
 }
 
 function sortUpcomingMatches(matches: Match[], day: string, now: Date) {
@@ -195,6 +196,9 @@ function sortUpcomingMatches(matches: Match[], day: string, now: Date) {
 }
 
 async function fetchApiFootballMatches(day: string) {
+  const serverMatches = await fetchServerApiFootballMatches(day);
+  if (serverMatches.length > 0) return serverMatches;
+
   const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY as string | undefined;
   if (!apiKey) return [];
 
@@ -204,6 +208,18 @@ async function fetchApiFootballMatches(day: string) {
         "x-apisports-key": apiKey
       }
     });
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as ApiFootballResponse;
+    return (data.response ?? []).map(mapApiFootballFixture);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchServerApiFootballMatches(day: string) {
+  try {
+    const response = await fetch(`/api/matches?date=${day}`);
     if (!response.ok) return [];
 
     const data = (await response.json()) as ApiFootballResponse;
