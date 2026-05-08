@@ -405,8 +405,11 @@ export function App() {
           void ensureLeagueMember(remote.league.id, authProfile.id, authProfile.role === "streamer" ? "streamer" : authProfile.role === "mod" ? "mod" : "member");
         }
         if (remote.matches.length > 0) {
-          setMatches(remote.matches);
-          setSelectedMatchId(filterUpcomingScheduledMatches(remote.matches)[0]?.id ?? "");
+          setMatches((current) => mergeById([...current, ...remote.matches]));
+          setSelectedMatchId((current) => {
+            const mergedMatches = mergeById([...matches, ...remote.matches]);
+            return mergedMatches.some((match) => match.id === current) ? current : filterUpcomingScheduledMatches(mergedMatches)[0]?.id ?? "";
+          });
           setMatchSync("live");
         }
         setPicks(remote.picks);
@@ -704,7 +707,7 @@ export function App() {
     setPicks((current) => [nextPick, ...current]);
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
-      void savePick(tipDay, nextPick, activeLeague?.id)
+      void savePick(tipDay, nextPick, activeLeague?.id, targetMatch)
         .then(() => setSyncStatus("ready"))
         .catch((error) => {
           console.error("Failed to save pick", error);

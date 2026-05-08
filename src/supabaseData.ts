@@ -246,8 +246,33 @@ export async function ensureLeagueMember(leagueId: string, userId: string, role:
   if (error) throw error;
 }
 
-export async function savePick(day: string, pick: Pick, leagueId?: string) {
+export async function saveMatch(day: string, match: Match) {
   if (!supabase) return;
+  const { error } = await supabase.from("matches").upsert({
+    id: match.id,
+    day,
+    competition: match.competition,
+    country: match.country ?? null,
+    home_team: match.homeTeam,
+    away_team: match.awayTeam,
+    starts_at: match.startsAt,
+    status: match.status,
+    home_score: match.homeScore ?? null,
+    away_score: match.awayScore ?? null,
+    home_logo_url: match.homeLogoUrl ?? null,
+    away_logo_url: match.awayLogoUrl ?? null,
+    home_record: match.homeRecord ?? null,
+    away_record: match.awayRecord ?? null,
+    venue: match.venue ?? null,
+    source: match.source ?? "api"
+  }, { onConflict: "id", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+export async function savePick(day: string, pick: Pick, leagueId?: string, match?: Match) {
+  if (!supabase) return;
+  if (match) await saveMatch(day, match);
+
   const payload: Record<string, unknown> = {
     id: pick.id,
     day,

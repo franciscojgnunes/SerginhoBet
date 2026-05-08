@@ -201,6 +201,11 @@ on public.matches for select
 to authenticated
 using (true);
 
+create policy "logged users cache matches"
+on public.matches for insert
+to authenticated
+with check (true);
+
 create policy "leagues are readable by logged users"
 on public.leagues for select
 to authenticated
