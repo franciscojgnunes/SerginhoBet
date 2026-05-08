@@ -24,6 +24,13 @@ export type User = {
   avatarColor: string;
 };
 
+export type League = {
+  id: string;
+  code: string;
+  name: string;
+  streamerId?: string;
+};
+
 export type Match = {
   id: string;
   competition: string;

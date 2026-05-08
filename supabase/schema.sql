@@ -1,6 +1,7 @@
 create extension if not exists pgcrypto;
 
 create type public.profile_role as enum ('viewer', 'mod', 'streamer');
+create type public.league_member_role as enum ('member', 'mod', 'streamer');
 create type public.match_status as enum ('scheduled', 'live', 'finished');
 create type public.pick_status as enum ('pending', 'won', 'lost', 'void', 'half_won', 'half_lost');
 create type public.slip_mode as enum ('combined', 'multiples');
@@ -15,6 +16,25 @@ create table public.profiles (
   role public.profile_role not null default 'viewer',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create table public.leagues (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  name text not null,
+  streamer_id uuid references public.profiles(id) on delete set null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint leagues_code_format check (code ~ '^[A-Z0-9][A-Z0-9_-]{2,23}$')
+);
+
+create table public.league_members (
+  league_id uuid not null references public.leagues(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  role public.league_member_role not null default 'member',
+  joined_at timestamptz not null default now(),
+  primary key (league_id, user_id)
 );
 
 create table public.matches (
@@ -41,6 +61,7 @@ create table public.matches (
 create table public.picks (
   id text primary key,
   day date not null,
+  league_id uuid references public.leagues(id) on delete cascade,
   match_id text not null references public.matches(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
   market_type text not null,
@@ -65,6 +86,7 @@ create table public.votes (
 create table public.daily_slips (
   id text primary key,
   day date not null,
+  league_id uuid references public.leagues(id) on delete cascade,
   status public.slip_status not null default 'published',
   mode public.slip_mode not null default 'combined',
   combined_stake numeric(10, 2) not null default 1,
@@ -84,9 +106,13 @@ create table public.slip_items (
 );
 
 create index matches_day_starts_at_idx on public.matches(day, starts_at);
+create index leagues_code_idx on public.leagues(code);
+create index league_members_user_idx on public.league_members(user_id);
+create index picks_league_day_created_at_idx on public.picks(league_id, day, created_at desc);
 create index picks_day_created_at_idx on public.picks(day, created_at desc);
 create index picks_user_day_idx on public.picks(user_id, day);
 create index votes_user_idx on public.votes(user_id);
+create index daily_slips_league_day_published_at_idx on public.daily_slips(league_id, day, published_at desc);
 create index daily_slips_day_published_at_idx on public.daily_slips(day, published_at desc);
 create index slip_items_slip_sort_idx on public.slip_items(slip_id, sort_order);
 
@@ -106,6 +132,10 @@ for each row execute function public.touch_updated_at();
 
 create trigger matches_touch_updated_at
 before update on public.matches
+for each row execute function public.touch_updated_at();
+
+create trigger leagues_touch_updated_at
+before update on public.leagues
 for each row execute function public.touch_updated_at();
 
 create or replace function public.handle_new_user()
@@ -148,6 +178,8 @@ as $$
 $$;
 
 alter table public.profiles enable row level security;
+alter table public.leagues enable row level security;
+alter table public.league_members enable row level security;
 alter table public.matches enable row level security;
 alter table public.picks enable row level security;
 alter table public.votes enable row level security;
@@ -168,6 +200,33 @@ create policy "matches are readable by logged users"
 on public.matches for select
 to authenticated
 using (true);
+
+create policy "leagues are readable by logged users"
+on public.leagues for select
+to authenticated
+using (true);
+
+create policy "streamers manage leagues"
+on public.leagues for all
+to authenticated
+using (public.is_streamer())
+with check (public.is_streamer());
+
+create policy "league members are readable by logged users"
+on public.league_members for select
+to authenticated
+using (true);
+
+create policy "users join leagues as themselves"
+on public.league_members for insert
+to authenticated
+with check ((select auth.uid()) = user_id);
+
+create policy "streamers manage league members"
+on public.league_members for all
+to authenticated
+using (public.is_streamer())
+with check (public.is_streamer());
 
 create policy "picks are readable by logged users"
 on public.picks for select
@@ -231,3 +290,7 @@ create policy "streamers delete slip items"
 on public.slip_items for delete
 to authenticated
 using (public.is_streamer());
+
+insert into public.leagues (code, name)
+values ('SERGINHO', 'SerginhoEsteves')
+on conflict (code) do nothing;

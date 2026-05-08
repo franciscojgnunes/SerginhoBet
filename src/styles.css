@@ -211,6 +211,23 @@ button:disabled {
   margin-top: 14px;
 }
 
+.login-league-badge {
+  align-items: center;
+  align-self: center;
+  background: rgba(183, 255, 52, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--lime);
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 900;
+  justify-content: center;
+  margin-top: 12px;
+  min-height: 34px;
+  padding: 0 0.82rem;
+  text-transform: uppercase;
+}
+
 .topbar {
   align-items: center;
   display: flex;
@@ -369,6 +386,7 @@ h1 {
 }
 
 .auth-name,
+.league-pill,
 .sync-pill {
   align-items: center;
   border: 1px solid var(--line);
@@ -379,6 +397,12 @@ h1 {
   font-weight: 850;
   min-height: 38px;
   padding: 0 0.72rem;
+}
+
+.league-pill {
+  background: rgba(183, 255, 52, 0.12);
+  color: var(--lime);
+  text-transform: uppercase;
 }
 
 .sync-pill {

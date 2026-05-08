@@ -30,8 +30,8 @@ import {
 } from "./domain";
 import { fetchTodayMatches } from "./sportsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { loadRemoteState, savePick, saveProfile, saveSettlement, saveSlip, saveVote } from "./supabaseData";
-import type { DailySlip, MarketType, Match, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
+import { ensureLeagueMember, loadRemoteState, savePick, saveProfile, saveSettlement, saveSlip, saveVote } from "./supabaseData";
+import type { DailySlip, League, MarketType, Match, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
 const tipDay = getLocalDateKey(currentDate);
@@ -42,6 +42,7 @@ const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
 const slipCacheKey = `pickroom:slip:${tipDay}`;
 const slipHistoryCacheKey = `pickroom:slip-history:${tipDay}`;
+const defaultLeagueCode = "SERGINHO";
 
 const marketOptions: MarketType[] = [
   "1X2",
@@ -271,6 +272,7 @@ export function App() {
   const [activeUserId, setActiveUserId] = useState("u-serginho");
   const [authProfile, setAuthProfile] = useState<User | null>(null);
   const [remoteProfiles, setRemoteProfiles] = useState<User[]>([]);
+  const [activeLeague, setActiveLeague] = useState<League | null>(null);
   const [authStatus, setAuthStatus] = useState<SyncStatus>("loading");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [matches, setMatches] = useState<Match[]>(() => readStoredValue<Match[]>(matchesCacheKey, []));
@@ -395,9 +397,13 @@ export function App() {
       inFlight = true;
       if (showLoading) setSyncStatus("loading");
       try {
-        const remote = await loadRemoteState(tipDay);
+        const remote = await loadRemoteState(tipDay, defaultLeagueCode);
         if (!mounted) return;
         setRemoteProfiles(remote.profiles);
+        setActiveLeague(remote.league ?? null);
+        if (remote.league && authProfile) {
+          void ensureLeagueMember(remote.league.id, authProfile.id, authProfile.role === "streamer" ? "streamer" : authProfile.role === "mod" ? "mod" : "member");
+        }
         if (remote.matches.length > 0) {
           setMatches(remote.matches);
           setSelectedMatchId(filterUpcomingScheduledMatches(remote.matches)[0]?.id ?? "");
@@ -428,7 +434,7 @@ export function App() {
       mounted = false;
       window.clearInterval(refreshTimer);
     };
-  }, [isLoggedIn]);
+  }, [authProfile, isLoggedIn]);
 
   useEffect(() => {
     const pendingSlips = slipHistory.filter((slip) => slip.settlementStatus === "pending");
@@ -681,7 +687,7 @@ export function App() {
     setPicks((current) => [nextPick, ...current]);
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
-      void savePick(tipDay, nextPick)
+      void savePick(tipDay, nextPick, activeLeague?.id)
         .then(() => setSyncStatus("ready"))
         .catch((error) => {
           console.error("Failed to save pick", error);
@@ -746,7 +752,7 @@ export function App() {
     ]);
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
-      void saveSlip(tipDay, historySlip)
+      void saveSlip(tipDay, historySlip, activeLeague?.id)
         .then(() => setSyncStatus("ready"))
         .catch((error) => {
           console.error("Failed to save slip", error);
@@ -948,6 +954,7 @@ export function App() {
           </div>
           <h1>SerginhoBet</h1>
           <p>Entra obrigatoriamente com Twitch para sugerir, votar e acompanhar a aposta da comunidade.</p>
+          <span className="login-league-badge">Liga {activeLeague?.code ?? defaultLeagueCode}</span>
           <div className="login-choice-grid">
             <button onClick={loginWithTwitch} disabled={!isSupabaseConfigured || authStatus === "loading"}>
               <LogIn size={22} />
@@ -986,6 +993,7 @@ export function App() {
           </div>
           <LogIn size={18} />
           <span className="auth-name">{activeUser.displayName}</span>
+          <span className="league-pill">Liga {activeLeague?.code ?? defaultLeagueCode}</span>
           <span className="role-pill">{activeUser.role}</span>
           <span className={`sync-pill ${syncStatus}`}>{syncStatus === "ready" ? "online" : syncStatus}</span>
           <button className="logout-button" onClick={logout}>Sair</button>

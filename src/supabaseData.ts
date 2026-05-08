@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient";
-import type { DailySlip, Match, Pick, PickStatus, SlipHistoryItem, User, Vote } from "./types";
+import type { DailySlip, League, Match, Pick, PickStatus, SlipHistoryItem, User, Vote } from "./types";
 
 type ProfileRow = {
   id: string;
@@ -26,6 +26,13 @@ type MatchRow = {
   away_record: string | null;
   venue: string | null;
   source: Match["source"] | null;
+};
+
+type LeagueRow = {
+  id: string;
+  code: string;
+  name: string;
+  streamer_id: string | null;
 };
 
 type PickRow = {
@@ -71,6 +78,7 @@ type SlipItemRow = {
 
 export type RemoteState = {
   profiles: User[];
+  league?: League;
   matches: Match[];
   picks: Pick[];
   votes: Vote[];
@@ -84,6 +92,15 @@ export function mapProfile(row: ProfileRow): User {
     displayName: row.display_name,
     role: row.role,
     avatarColor: row.role === "streamer" ? "#b7ff34" : "#16d782"
+  };
+}
+
+function mapLeague(row: LeagueRow): League {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    streamerId: row.streamer_id ?? undefined
   };
 }
 
@@ -147,15 +164,39 @@ function mapSlip(row: SlipRow, pickIds: string[]): SlipHistoryItem {
   };
 }
 
-export async function loadRemoteState(day: string): Promise<RemoteState> {
+export async function loadRemoteState(day: string, leagueCode: string): Promise<RemoteState> {
   if (!supabase) return { profiles: [], matches: [], picks: [], votes: [], slipHistory: [] };
+
+  const leagueResult = await supabase.from("leagues").select("id,code,name,streamer_id").eq("code", leagueCode).maybeSingle();
+  const leagueTablesReady = !leagueResult.error;
+  if (leagueResult.error) {
+    console.warn("League tables are not ready yet; loading unscoped state.", leagueResult.error.message);
+  }
+  const league = leagueResult.data ? mapLeague(leagueResult.data as LeagueRow) : undefined;
+  const leagueId = league?.id;
+
+  const picksQuery = leagueTablesReady
+    ? leagueId
+      ? supabase.from("picks").select("*").eq("day", day).eq("league_id", leagueId).order("created_at", { ascending: false })
+      : supabase.from("picks").select("*").eq("day", day).is("league_id", null).order("created_at", { ascending: false })
+    : supabase.from("picks").select("*").eq("day", day).order("created_at", { ascending: false });
+
+  const votesQuery = leagueTablesReady && leagueId
+    ? supabase.from("votes").select("*, picks!inner(league_id)").eq("picks.league_id", leagueId)
+    : supabase.from("votes").select("*");
+
+  const slipsQuery = leagueTablesReady
+    ? leagueId
+      ? supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).eq("league_id", leagueId).order("published_at", { ascending: false })
+      : supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).is("league_id", null).order("published_at", { ascending: false })
+    : supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).order("published_at", { ascending: false });
 
   const [profilesResult, matchesResult, picksResult, votesResult, slipsResult] = await Promise.all([
     supabase.from("profiles").select("id,twitch_id,display_name,avatar_url,role"),
     supabase.from("matches").select("*").eq("day", day).order("starts_at", { ascending: true }),
-    supabase.from("picks").select("*").eq("day", day).order("created_at", { ascending: false }),
-    supabase.from("votes").select("*"),
-    supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).order("published_at", { ascending: false })
+    picksQuery,
+    votesQuery,
+    slipsQuery
   ]);
 
   if (profilesResult.error) throw profilesResult.error;
@@ -171,6 +212,7 @@ export async function loadRemoteState(day: string): Promise<RemoteState> {
 
   return {
     profiles: (profilesResult.data ?? []).map((row) => mapProfile(row as ProfileRow)),
+    league,
     matches: (matchesResult.data ?? []).map((row) => mapMatch(row as MatchRow)),
     picks: (picksResult.data ?? []).map((row) => mapPick(row as PickRow)),
     votes: (votesResult.data ?? []).map((row) => mapVote(row as VoteRow)),
@@ -194,9 +236,19 @@ export async function saveProfile(profile: User, twitchId?: string | null, avata
   if (error) throw error;
 }
 
-export async function savePick(day: string, pick: Pick) {
+export async function ensureLeagueMember(leagueId: string, userId: string, role: "member" | "streamer" | "mod" = "member") {
   if (!supabase) return;
-  const { error } = await supabase.from("picks").insert({
+  const { error } = await supabase.from("league_members").upsert({
+    league_id: leagueId,
+    user_id: userId,
+    role
+  }, { onConflict: "league_id,user_id", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+export async function savePick(day: string, pick: Pick, leagueId?: string) {
+  if (!supabase) return;
+  const payload: Record<string, unknown> = {
     id: pick.id,
     day,
     match_id: pick.matchId,
@@ -210,7 +262,9 @@ export async function savePick(day: string, pick: Pick) {
     status: pick.status,
     profit: pick.profit,
     created_at: pick.createdAt
-  });
+  };
+  if (leagueId) payload.league_id = leagueId;
+  const { error } = await supabase.from("picks").insert(payload);
   if (error) throw error;
 }
 
@@ -224,9 +278,9 @@ export async function saveVote(vote: Vote) {
   if (error) throw error;
 }
 
-export async function saveSlip(day: string, slip: SlipHistoryItem) {
+export async function saveSlip(day: string, slip: SlipHistoryItem, leagueId?: string) {
   if (!supabase) return;
-  const { error: slipError } = await supabase.from("daily_slips").upsert({
+  const payload: Record<string, unknown> = {
     id: slip.id,
     day,
     status: slip.status,
@@ -237,7 +291,9 @@ export async function saveSlip(day: string, slip: SlipHistoryItem) {
     profit: slip.profit,
     generated_at: slip.generatedAt,
     published_at: slip.publishedAt
-  }, { onConflict: "id" });
+  };
+  if (leagueId) payload.league_id = leagueId;
+  const { error: slipError } = await supabase.from("daily_slips").upsert(payload, { onConflict: "id" });
   if (slipError) throw slipError;
 
   const { error: deleteError } = await supabase.from("slip_items").delete().eq("slip_id", slip.id);
