@@ -426,6 +426,7 @@ h1 {
   min-height: 42px;
   min-width: 0;
   padding: 0 0.82rem 0 0.28rem;
+  text-align: left;
 }
 
 .topbar-account .avatar {
@@ -1385,7 +1386,7 @@ h1 {
   border-radius: 8px;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(118px, 0.9fr) minmax(150px, 1.35fr) minmax(76px, 0.55fr) minmax(76px, 0.55fr) minmax(104px, 0.8fr);
+  grid-template-columns: minmax(118px, 0.9fr) minmax(180px, 1.5fr) minmax(76px, 0.55fr) minmax(76px, 0.55fr);
   margin-bottom: 16px;
   padding: 12px;
 }

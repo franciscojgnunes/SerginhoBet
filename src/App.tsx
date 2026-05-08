@@ -973,7 +973,6 @@ export function App() {
         <div className="pick-meta">
           <span>@{pick.odds.toFixed(2)}</span>
           <span>{pick.stake}u</span>
-          <span>{pick.bookmaker}</span>
           {match ? <span>{match.homeTeam} vs {match.awayTeam}</span> : null}
         </div>
         <div className="vote-row">
@@ -1045,12 +1044,11 @@ export function App() {
             {isStreamer ? <button className={activePage === "resolve" ? "active" : ""} onClick={() => setActivePage("resolve")}>Resolver</button> : null}
             <button className={activePage === "history" ? "active" : ""} onClick={() => setActivePage("history")}>Histórico</button>
             <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
-            <button className={activePage === "profile" ? "active" : ""} onClick={() => setActivePage("profile")}>Perfil</button>
           </div>
-          <div className="topbar-account">
+          <button className="topbar-account" onClick={() => setActivePage("profile")} aria-label="Abrir perfil">
             <Avatar user={activeUser} />
             <span>{activeUser.displayName}</span>
-          </div>
+          </button>
           <span className="league-pill">{activeLeague?.code ?? defaultLeagueCode}</span>
           <button className="logout-button" onClick={logout}>Sair</button>
         </div>
@@ -1920,10 +1918,6 @@ function TipForm({
         <label>
           Stake
           <input type="number" step="0.5" min="0.5" value={formState.stake} onChange={(event) => onChange((state) => ({ ...state, stake: event.target.value }))} />
-        </label>
-        <label>
-          Fonte
-          <input placeholder="Bookmaker" value={formState.bookmaker} onChange={(event) => onChange((state) => ({ ...state, bookmaker: event.target.value }))} />
         </label>
         <label className="reason-field">
           Argumento opcional
