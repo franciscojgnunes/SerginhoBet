@@ -185,7 +185,7 @@ button:disabled {
   color: var(--muted);
   font-size: 1.05rem;
   line-height: 1.55;
-  margin: 0 auto 24px;
+  margin: 14px auto 24px;
   max-width: 480px;
 }
 
@@ -222,7 +222,6 @@ button:disabled {
   font-size: 0.8rem;
   font-weight: 900;
   justify-content: center;
-  margin-top: 12px;
   min-height: 34px;
   padding: 0 0.82rem;
   text-transform: uppercase;

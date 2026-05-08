@@ -1023,8 +1023,8 @@ export function App() {
             <img src="/serginhobet-icon.svg" alt="" />
           </div>
           <h1>SerginhoBet</h1>
-          <p>Entra obrigatoriamente com Twitch para sugerir, votar e acompanhar a aposta da comunidade.</p>
           <span className="login-league-badge">Liga {activeLeague?.code ?? defaultLeagueCode}</span>
+          <p>Entra obrigatoriamente com Twitch para sugerir, votar e acompanhar a aposta da comunidade.</p>
           <div className="login-choice-grid">
             <button onClick={loginWithTwitch} disabled={!isSupabaseConfigured || authStatus === "loading"}>
               <LogIn size={22} />
