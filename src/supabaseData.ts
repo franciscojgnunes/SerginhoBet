@@ -40,7 +40,7 @@ type PickRow = {
   day: string;
   match_id: string;
   user_id: string;
-  market_type: Pick["marketType"];
+  market_type: string;
   selection: string;
   odds: number;
   stake: number;
@@ -60,7 +60,7 @@ type VoteRow = {
 type MatchOddRow = {
   id: string;
   match_id: string;
-  market_type: MatchOdd["marketType"];
+  market_type: string;
   selection: string;
   odds: number;
   bookmaker: string;
@@ -136,12 +136,17 @@ function mapMatch(row: MatchRow): Match {
   };
 }
 
+function normalizeMarketType(value: string): Pick["marketType"] {
+  if (value === "BTTS") return "Ambas marcam";
+  return value as Pick["marketType"];
+}
+
 function mapPick(row: PickRow): Pick {
   return {
     id: row.id,
     matchId: row.match_id,
     userId: row.user_id,
-    marketType: row.market_type,
+    marketType: normalizeMarketType(row.market_type),
     selection: row.selection,
     odds: Number(row.odds),
     stake: Number(row.stake),
@@ -165,7 +170,7 @@ function mapMatchOdd(row: MatchOddRow): MatchOdd {
   return {
     id: row.id,
     matchId: row.match_id,
-    marketType: row.market_type,
+    marketType: normalizeMarketType(row.market_type),
     selection: row.selection,
     odds: Number(row.odds),
     bookmaker: row.bookmaker,

@@ -4,7 +4,7 @@ export type MarketType =
   | "1X2"
   | "Dupla chance"
   | "Over/Under"
-  | "BTTS"
+  | "Ambas marcam"
   | "Handicap"
   | "Resultado correto"
   | "Intervalo/Final"

@@ -51,7 +51,7 @@ const marketOptions: MarketType[] = [
   "1X2",
   "Dupla chance",
   "Over/Under",
-  "BTTS",
+  "Ambas marcam",
   "Handicap",
   "Resultado correto",
   "Intervalo/Final",
@@ -65,7 +65,7 @@ const marketPlaceholders: Record<MarketType, string> = {
   "1X2": "Casa vence / Empate / Fora vence",
   "Dupla chance": "Casa ou empate",
   "Over/Under": "Mais de 2.5 golos",
-  BTTS: "Ambas marcam: Sim",
+  "Ambas marcam": "Ambas marcam: Sim",
   Handicap: "Casa -1.0",
   "Resultado correto": "2-1",
   "Intervalo/Final": "Empate / Casa",
@@ -76,7 +76,15 @@ const marketPlaceholders: Record<MarketType, string> = {
 };
 
 const defaultSelectionsByMarket: Partial<Record<MarketType, string[]>> = {
-  "1X2": ["Casa vence", "Empate", "Fora vence"]
+  "1X2": ["Casa vence", "Empate", "Fora vence"],
+  "Dupla chance": ["Casa ou empate", "Casa ou fora", "Empate ou fora"],
+  "Over/Under": ["Mais de 0.5 golos", "Mais de 1.5 golos", "Mais de 2.5 golos", "Mais de 3.5 golos", "Menos de 2.5 golos", "Menos de 3.5 golos"],
+  "Ambas marcam": ["Ambas marcam: Sim", "Ambas marcam: Não"],
+  Handicap: ["Casa -1.0", "Casa +1.0", "Fora -1.0", "Fora +1.0"],
+  "Resultado correto": ["1-0", "2-0", "2-1", "0-0", "1-1", "0-1", "0-2", "1-2"],
+  "Intervalo/Final": ["Casa/Casa", "Empate/Casa", "Empate/Empate", "Empate/Fora", "Fora/Fora"],
+  Cartoes: ["Mais de 3.5 cartões", "Mais de 4.5 cartões", "Mais de 5.5 cartões", "Menos de 4.5 cartões", "Menos de 5.5 cartões"],
+  Cantos: ["Mais de 8.5 cantos", "Mais de 9.5 cantos", "Mais de 10.5 cantos", "Menos de 9.5 cantos", "Menos de 10.5 cantos"]
 };
 
 type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile";
