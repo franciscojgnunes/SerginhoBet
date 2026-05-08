@@ -78,7 +78,7 @@ const marketPlaceholders: Record<MarketType, string> = {
 const defaultSelectionsByMarket: Partial<Record<MarketType, string[]>> = {
   "1X2": ["Casa vence", "Empate", "Fora vence"],
   "Dupla chance": ["Casa ou empate", "Casa ou fora", "Empate ou fora"],
-  "Over/Under": ["Mais de 0.5 golos", "Mais de 1.5 golos", "Mais de 2.5 golos", "Mais de 3.5 golos", "Menos de 2.5 golos", "Menos de 3.5 golos"],
+  "Over/Under": ["Mais de 0.5 golos", "Mais de 1.5 golos", "Mais de 2.5 golos", "Mais de 3.5 golos", "Menos de 0.5 golos", "Menos de 1.5 golos", "Menos de 2.5 golos", "Menos de 3.5 golos"],
   "Ambas marcam": ["Ambas marcam: Sim", "Ambas marcam: Não"],
   Handicap: ["Casa -1.0", "Casa +1.0", "Fora -1.0", "Fora +1.0"],
   "Resultado correto": ["1-0", "2-0", "2-1", "0-0", "1-1", "0-1", "0-2", "1-2"],
