@@ -145,6 +145,16 @@ function formatKickoff(value: string) {
   }).format(new Date(value));
 }
 
+function formatSlipDateTime(value: string) {
+  return new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
 function statusLabel(status: PickStatus) {
   const labels: Record<PickStatus, string> = {
     pending: "Pendente",
@@ -423,7 +433,12 @@ export function App() {
         }
         setPicks(remote.picks);
         setVotes(remote.votes);
-        if (remote.dailySlip) setDailySlip(remote.dailySlip);
+        if (remote.dailySlip) {
+          setDailySlip((current) => {
+            const hasLocalDraft = current.status === "draft" && current.pickIds.length > 0 && current.generatedAt !== remote.dailySlip?.generatedAt;
+            return hasLocalDraft ? current : remote.dailySlip!;
+          });
+        }
         setSlipHistory(remote.slipHistory);
         setSyncStatus("ready");
       } catch (error) {
@@ -805,23 +820,24 @@ export function App() {
         status: "draft",
         settlementStatus: "pending",
         profit: 0,
+        generatedAt: new Date().toISOString(),
         pickIds: exists ? slip.pickIds.filter((id) => id !== pickId) : [...slip.pickIds, pickId]
       };
     });
   }
 
   function setSlipMode(mode: DailySlip["mode"]) {
-    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, mode }));
+    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, mode, generatedAt: new Date().toISOString() }));
   }
 
   function setCombinedStake(value: number) {
     if (!Number.isFinite(value) || value <= 0) return;
-    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, combinedStake: value }));
+    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, combinedStake: value, generatedAt: new Date().toISOString() }));
   }
 
   function setMultiplesStake(value: number) {
     if (!Number.isFinite(value) || value <= 0) return;
-    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, multiplesStake: value }));
+    setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, multiplesStake: value, generatedAt: new Date().toISOString() }));
   }
 
   function settlePick(slipId: string, pickId: string, status: PickStatus) {
@@ -1757,7 +1773,7 @@ function ViewerBetsPage({
               <button className="viewer-history-row slip-history-row slip-expand-toggle" onClick={() => toggleExpandedSlip(slip.id)}>
                 <div>
                   <strong>Boletim publicado #{slipHistory.length - index}</strong>
-                  <span>{new Date(slip.publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
+                  <span>{formatSlipDateTime(slip.publishedAt)} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
                 </div>
                 <small>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</small>
                 <div className={`status ${slip.settlementStatus}`}>{statusLabel(slip.settlementStatus)}</div>
@@ -1865,7 +1881,7 @@ function HistoryPage({
               <button className="viewer-history-row slip-history-row slip-expand-toggle" onClick={() => toggleExpandedSlip(slip.id)}>
                 <div>
                   <strong>Boletim publicado #{slipHistory.length - index}</strong>
-                  <span>{new Date(slip.publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
+                  <span>{formatSlipDateTime(slip.publishedAt)} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
                 </div>
                 <small>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</small>
                 <div className={`status ${slip.settlementStatus}`}>{statusLabel(slip.settlementStatus)}</div>
@@ -2048,7 +2064,7 @@ function ResolvePage({
       <select value={selectedSlipId} onChange={(event) => onSelectSlip(event.target.value)}>
         {slipHistory.map((slip, index) => (
           <option value={slip.id} key={slip.id}>
-            Boletim #{slipHistory.length - index} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} - {new Date(slip.publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+            Boletim #{slipHistory.length - index} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} - {formatSlipDateTime(slip.publishedAt)}
           </option>
         ))}
       </select>
