@@ -37,7 +37,7 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false }
 });
 
-const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${day}&timezone=${timezone}&status=NS-TBD`, {
+const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${day}&timezone=${timezone}`, {
   headers: {
     "x-apisports-key": apiFootballKey
   }

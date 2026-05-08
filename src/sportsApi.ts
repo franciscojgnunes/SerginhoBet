@@ -203,7 +203,7 @@ async function fetchApiFootballMatches(day: string) {
   if (!apiKey) return [];
 
   try {
-    const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${day}&timezone=Europe/Lisbon&status=NS-TBD`, {
+    const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${day}&timezone=Europe/Lisbon`, {
       headers: {
         "x-apisports-key": apiKey
       }

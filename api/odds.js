@@ -9,7 +9,7 @@ function normalizeSelection(value) {
 }
 
 export default async function handler(request, response) {
-  const apiKey = process.env.API_FOOTBALL_KEY;
+  const apiKey = process.env.API_FOOTBALL_KEY || process.env.VITE_API_FOOTBALL_KEY;
   if (!apiKey) {
     response.status(200).json({ odds: [], error: "API_FOOTBALL_KEY is not configured" });
     return;
