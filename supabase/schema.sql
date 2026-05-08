@@ -196,6 +196,12 @@ on public.profiles for insert
 to authenticated
 with check ((select auth.uid()) = id and role = 'viewer');
 
+create policy "users update their own profile"
+on public.profiles for update
+to authenticated
+using ((select auth.uid()) = id)
+with check ((select auth.uid()) = id);
+
 create policy "matches are readable by logged users"
 on public.matches for select
 to authenticated

@@ -922,6 +922,15 @@ h1 {
   max-width: 1280px;
 }
 
+.profile-page {
+  animation: page-enter 320ms var(--ease-out) both;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+  margin: 0 auto;
+  max-width: 1180px;
+}
+
 .history-panel {
   min-width: 0;
 }
@@ -1583,6 +1592,103 @@ h1 {
   height: 34px;
   justify-content: center;
   width: 34px;
+}
+
+.image-avatar {
+  object-fit: cover;
+}
+
+.profile-hero {
+  align-items: center;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin-bottom: 16px;
+}
+
+.profile-avatar-frame {
+  align-items: center;
+  background: #07150e;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  display: grid;
+  height: 96px;
+  overflow: hidden;
+  place-items: center;
+  width: 96px;
+}
+
+.profile-avatar-frame img,
+.profile-avatar-frame .avatar {
+  height: 100%;
+  width: 100%;
+}
+
+.profile-avatar-frame img {
+  object-fit: cover;
+}
+
+.profile-hero h2 {
+  color: var(--text);
+  font-size: 1.4rem;
+  line-height: 1.1;
+}
+
+.profile-hero p,
+.profile-avatar-field {
+  color: var(--muted);
+}
+
+.profile-avatar-field {
+  display: grid;
+  font-size: 0.78rem;
+  font-weight: 900;
+  gap: 8px;
+  text-transform: uppercase;
+}
+
+.profile-avatar-field input {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  min-height: 44px;
+  outline: none;
+  padding: 0.72rem 0.8rem;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.profile-actions .ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.profile-stats-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.profile-stats-grid span {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 12px;
+}
+
+.profile-stats-grid b {
+  color: var(--lime);
+  display: block;
+  font-size: 1.18rem;
+  margin-top: 5px;
 }
 
 .author span {
@@ -2308,6 +2414,7 @@ h1 {
   .workspace,
   .games-grid,
   .stats-page,
+  .profile-page,
   .viewer-bets-page,
   .side-column {
     grid-template-columns: 1fr;
@@ -2377,6 +2484,10 @@ h1 {
   }
 
   .viewer-slip-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .profile-stats-grid {
     grid-template-columns: 1fr 1fr;
   }
 

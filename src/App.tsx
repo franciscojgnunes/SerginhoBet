@@ -1,5 +1,6 @@
 import {
   Activity,
+  Camera,
   CalendarDays,
   CheckCircle2,
   Flame,
@@ -30,7 +31,7 @@ import {
 } from "./domain";
 import { fetchTodayMatches } from "./sportsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { ensureLeagueMember, loadRemoteState, savePick, saveProfile, saveSettlement, saveSlip, saveVote } from "./supabaseData";
+import { ensureLeagueMember, loadRemoteState, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updateProfileAvatar } from "./supabaseData";
 import type { DailySlip, League, MarketType, Match, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -72,7 +73,7 @@ const marketPlaceholders: Record<MarketType, string> = {
   Outro: "Escreve o mercado"
 };
 
-type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats";
+type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile";
 type StatsScope = ReturnType<typeof buildStatsScope>;
 type SyncStatus = "idle" | "loading" | "ready" | "saving" | "error";
 
@@ -255,6 +256,9 @@ function formatNameList(names: string[]) {
 }
 
 function Avatar({ user }: { user: User }) {
+  if (user.avatarUrl) {
+    return <img className="avatar image-avatar" src={user.avatarUrl} alt={`Avatar ${user.displayName}`} loading="lazy" />;
+  }
   return (
     <span className="avatar" style={{ background: user.avatarColor }}>
       {user.displayName.slice(0, 1).toUpperCase()}
@@ -273,6 +277,7 @@ export function App() {
   const [authProfile, setAuthProfile] = useState<User | null>(null);
   const [remoteProfiles, setRemoteProfiles] = useState<User[]>([]);
   const [activeLeague, setActiveLeague] = useState<League | null>(null);
+  const [twitchAvatarUrl, setTwitchAvatarUrl] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState<SyncStatus>("loading");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [matches, setMatches] = useState<Match[]>(() => readStoredValue<Match[]>(matchesCacheKey, []));
@@ -335,6 +340,7 @@ export function App() {
       if (error || !data.session?.user) {
         setIsLoggedIn(false);
         setAuthProfile(null);
+        setTwitchAvatarUrl(null);
         setAuthStatus("idle");
         return;
       }
@@ -347,7 +353,8 @@ export function App() {
         id: data.session.user.id,
         displayName,
         role: "viewer",
-        avatarColor: "#16d782"
+        avatarColor: "#16d782",
+        avatarUrl: avatarUrl ?? undefined
       };
 
       try {
@@ -358,6 +365,7 @@ export function App() {
 
       if (!mounted) return;
       setAuthProfile(profile);
+      setTwitchAvatarUrl(avatarUrl);
       setActiveUserId(profile.id);
       setIsLoggedIn(true);
       setAuthStatus("ready");
@@ -369,6 +377,7 @@ export function App() {
       if (!session?.user) {
         setIsLoggedIn(false);
         setAuthProfile(null);
+        setTwitchAvatarUrl(null);
         setRemoteProfiles([]);
         setAuthStatus("idle");
         return;
@@ -909,8 +918,28 @@ export function App() {
     if (supabase) await supabase.auth.signOut();
     setIsLoggedIn(false);
     setAuthProfile(null);
+    setTwitchAvatarUrl(null);
     setRemoteProfiles([]);
     setActiveUserId("u-serginho");
+  }
+
+  async function saveAvatarPreference(avatarUrl: string | null) {
+    if (!authProfile) return;
+    const cleanUrl = avatarUrl?.trim() || null;
+    const nextProfile = { ...authProfile, avatarUrl: cleanUrl ?? undefined };
+    const nextRemoteProfiles = remoteProfiles.map((profile) => profile.id === authProfile.id ? { ...profile, avatarUrl: cleanUrl ?? undefined } : profile);
+    setAuthProfile(nextProfile);
+    setRemoteProfiles(nextRemoteProfiles);
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      try {
+        await updateProfileAvatar(authProfile.id, cleanUrl);
+        setSyncStatus("ready");
+      } catch (error) {
+        console.error("Failed to update avatar", error);
+        setSyncStatus("error");
+      }
+    }
   }
 
   function renderPickCard(pick: Pick) {
@@ -1016,6 +1045,7 @@ export function App() {
             {isStreamer ? <button className={activePage === "resolve" ? "active" : ""} onClick={() => setActivePage("resolve")}>Resolver</button> : null}
             <button className={activePage === "history" ? "active" : ""} onClick={() => setActivePage("history")}>Histórico</button>
             <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
+            <button className={activePage === "profile" ? "active" : ""} onClick={() => setActivePage("profile")}>Perfil</button>
           </div>
           <LogIn size={18} />
           <span className="auth-name">{activeUser.displayName}</span>
@@ -1282,6 +1312,19 @@ export function App() {
         />
       ) : null}
 
+      {activePage === "profile" ? (
+        <ProfilePage
+          user={activeUser}
+          twitchAvatarUrl={twitchAvatarUrl}
+          picks={allStoredPicks.filter((pick) => pick.userId === activeUserId)}
+          finalPickIds={new Set(allStoredSlips.flatMap((slip) => slip.pickIds))}
+          slipHistory={allStoredSlips}
+          monthName={monthName}
+          monthKey={monthKey}
+          onSaveAvatar={saveAvatarPreference}
+        />
+      ) : null}
+
       <footer className="disclaimer">
         <UserRound size={16} />
         Unidades fictícias. Sem dinheiro real, depósitos, cashout ou execução de apostas.
@@ -1388,6 +1431,126 @@ function TipModal({
         />
       </section>
     </div>
+  );
+}
+
+function ProfilePage({
+  user,
+  twitchAvatarUrl,
+  picks,
+  finalPickIds,
+  slipHistory,
+  monthName,
+  monthKey,
+  onSaveAvatar
+}: {
+  user: User;
+  twitchAvatarUrl: string | null;
+  picks: Pick[];
+  finalPickIds: Set<string>;
+  slipHistory: SlipHistoryItem[];
+  monthName: string;
+  monthKey: string;
+  onSaveAvatar: (avatarUrl: string | null) => Promise<void>;
+}) {
+  const [avatarInput, setAvatarInput] = useState(user.avatarUrl ?? "");
+  const [isSaving, setIsSaving] = useState(false);
+  const userPickIds = new Set(picks.map((pick) => pick.id));
+
+  useEffect(() => {
+    setAvatarInput(user.avatarUrl ?? "");
+  }, [user.avatarUrl]);
+
+  function buildPersonalStats(filter: (value: string) => boolean) {
+    const scopedPicks = picks.filter((pick) => filter(pick.createdAt));
+    const settledPicks = scopedPicks.filter((pick) => pick.status !== "pending");
+    const settledSlipShares = slipHistory
+      .filter((slip) => slip.mode === "combined" && slip.settlementStatus !== "pending" && filter(slip.publishedAt))
+      .reduce((total, slip) => {
+        const userSelections = slip.pickIds.filter((pickId) => userPickIds.has(pickId)).length;
+        if (userSelections === 0 || slip.pickIds.length === 0) return total;
+        return total + (slip.profit / slip.pickIds.length) * userSelections;
+      }, 0);
+    const individualProfit = settledPicks.reduce((total, pick) => total + pick.profit, 0);
+    const stake = settledPicks.reduce((total, pick) => total + pick.stake, 0);
+    const won = settledPicks.filter((pick) => pick.status === "won" || pick.status === "half_won").length;
+
+    return {
+      submitted: scopedPicks.length,
+      finals: scopedPicks.filter((pick) => finalPickIds.has(pick.id)).length,
+      resolved: settledPicks.length,
+      pending: scopedPicks.length - settledPicks.length,
+      profit: roundUnits(individualProfit + settledSlipShares),
+      roi: stake > 0 ? roundUnits(((individualProfit + settledSlipShares) / stake) * 100) : 0,
+      winrate: settledPicks.length > 0 ? Math.round((won / settledPicks.length) * 100) : 0
+    };
+  }
+
+  async function handleAvatarSave(nextUrl: string | null) {
+    setIsSaving(true);
+    await onSaveAvatar(nextUrl);
+    setIsSaving(false);
+  }
+
+  const monthStats = buildPersonalStats((value) => value.slice(0, 7) === monthKey);
+  const allStats = buildPersonalStats(() => true);
+  const avatarPreview = avatarInput.trim() || user.avatarUrl || twitchAvatarUrl || "";
+
+  return (
+    <section className="profile-page">
+      <section className="panel profile-card">
+        <div className="section-title spread">
+          <div><UserRound size={18} /><h3>Perfil</h3></div>
+          <span>{user.role}</span>
+        </div>
+        <div className="profile-hero">
+          <div className="profile-avatar-frame">
+            {avatarPreview ? <img src={avatarPreview} alt={`Avatar ${user.displayName}`} /> : <Avatar user={user} />}
+          </div>
+          <div>
+            <h2>{user.displayName}</h2>
+            <p>Avatar e estatísticas pessoais da tua conta Twitch.</p>
+          </div>
+        </div>
+        <label className="profile-avatar-field">
+          URL do avatar
+          <input
+            value={avatarInput}
+            onChange={(event) => setAvatarInput(event.target.value)}
+            placeholder="https://..."
+          />
+        </label>
+        <div className="profile-actions">
+          <button onClick={() => handleAvatarSave(avatarInput)} disabled={isSaving}>
+            <Camera size={16} />
+            {isSaving ? "A guardar" : "Guardar avatar"}
+          </button>
+          <button className="ghost" onClick={() => handleAvatarSave(twitchAvatarUrl)} disabled={!twitchAvatarUrl || isSaving}>
+            Usar Twitch
+          </button>
+          <button className="ghost" onClick={() => handleAvatarSave(null)} disabled={isSaving}>
+            Remover
+          </button>
+        </div>
+      </section>
+
+      <section className="panel profile-stats-card">
+        <div className="section-title spread">
+          <div><LineChart size={18} /><h3>As minhas estatísticas</h3></div>
+          <span>{monthName}</span>
+        </div>
+        <div className="profile-stats-grid">
+          <span>Tips este mês <b>{monthStats.submitted}</b></span>
+          <span>Nas finais <b>{monthStats.finals}</b></span>
+          <span>Pendentes <b>{monthStats.pending}</b></span>
+          <span>Resolvidas <b>{monthStats.resolved}</b></span>
+          <span>Winrate <b>{monthStats.winrate}%</b></span>
+          <span>ROI <b>{monthStats.roi.toFixed(1)}%</b></span>
+          <span>Lucro mensal <b>{monthStats.profit >= 0 ? "+" : ""}{monthStats.profit.toFixed(2)}u</b></span>
+          <span>Lucro geral <b>{allStats.profit >= 0 ? "+" : ""}{allStats.profit.toFixed(2)}u</b></span>
+        </div>
+      </section>
+    </section>
   );
 }
 

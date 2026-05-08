@@ -91,7 +91,8 @@ export function mapProfile(row: ProfileRow): User {
     id: row.id,
     displayName: row.display_name,
     role: row.role,
-    avatarColor: row.role === "streamer" ? "#b7ff34" : "#16d782"
+    avatarColor: row.role === "streamer" ? "#b7ff34" : "#16d782",
+    avatarUrl: row.avatar_url ?? undefined
   };
 }
 
@@ -223,9 +224,20 @@ export async function loadRemoteState(day: string, leagueCode: string): Promise<
 
 export async function saveProfile(profile: User, twitchId?: string | null, avatarUrl?: string | null) {
   if (!supabase) return;
-  const { data: existing, error: readError } = await supabase.from("profiles").select("id").eq("id", profile.id).maybeSingle();
+  const { data: existing, error: readError } = await supabase.from("profiles").select("id,avatar_url").eq("id", profile.id).maybeSingle();
   if (readError) throw readError;
-  if (existing) return;
+  if (existing) {
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        twitch_id: twitchId ?? null,
+        display_name: profile.displayName,
+        avatar_url: existing.avatar_url ?? avatarUrl ?? null
+      })
+      .eq("id", profile.id);
+    if (error) throw error;
+    return;
+  }
 
   const payload = {
     twitch_id: twitchId ?? null,
@@ -233,6 +245,15 @@ export async function saveProfile(profile: User, twitchId?: string | null, avata
     avatar_url: avatarUrl ?? null
   };
   const { error } = await supabase.from("profiles").insert({ id: profile.id, ...payload, role: profile.role });
+  if (error) throw error;
+}
+
+export async function updateProfileAvatar(userId: string, avatarUrl: string | null) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("profiles")
+    .update({ avatar_url: avatarUrl })
+    .eq("id", userId);
   if (error) throw error;
 }
 

@@ -22,6 +22,7 @@ export type User = {
   displayName: string;
   role: "viewer" | "mod" | "streamer";
   avatarColor: string;
+  avatarUrl?: string;
 };
 
 export type League = {
