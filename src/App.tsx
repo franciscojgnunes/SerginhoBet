@@ -408,9 +408,6 @@ export function App() {
           setMatches(remote.matches);
           setSelectedMatchId(filterUpcomingScheduledMatches(remote.matches)[0]?.id ?? "");
           setMatchSync("live");
-        } else {
-          setMatches([]);
-          setMatchSync("empty");
         }
         setPicks(remote.picks);
         setVotes(remote.votes);
@@ -461,13 +458,33 @@ export function App() {
     try {
       const todayMatches = await fetchTodayMatches(currentDate, { forceRefresh });
       const upcomingMatches = filterUpcomingScheduledMatches(todayMatches);
-      setMatches(todayMatches);
-      setSelectedMatchId(upcomingMatches[0]?.id ?? "");
-      setMatchSync(todayMatches.length > 0 ? "live" : "empty");
-    } catch {
+      if (todayMatches.length > 0) {
+        setMatches(todayMatches);
+        setSelectedMatchId(upcomingMatches[0]?.id ?? "");
+        setMatchSync("live");
+        return;
+      }
+      if (cachedMatches.length > 0) {
+        const upcomingCachedMatches = filterUpcomingScheduledMatches(cachedMatches);
+        setMatches(cachedMatches);
+        setSelectedMatchId(upcomingCachedMatches[0]?.id ?? "");
+        setMatchSync("live");
+        return;
+      }
       setMatches([]);
       setSelectedMatchId("");
       setMatchSync("empty");
+    } catch {
+      if (cachedMatches.length > 0) {
+        const upcomingCachedMatches = filterUpcomingScheduledMatches(cachedMatches);
+        setMatches(cachedMatches);
+        setSelectedMatchId(upcomingCachedMatches[0]?.id ?? "");
+        setMatchSync("live");
+      } else {
+        setMatches([]);
+        setSelectedMatchId("");
+        setMatchSync("empty");
+      }
     }
   }
 

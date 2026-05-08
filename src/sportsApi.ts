@@ -165,7 +165,10 @@ export async function fetchTodayMatches(date = new Date(), options: { forceRefre
   const day = getLocalDateKey(date);
   if (!options.forceRefresh && dayRequestCache.has(day)) return dayRequestCache.get(day)!;
 
-  const request = fetchMatchesForDay(day, date);
+  const request = fetchMatchesForDay(day, date).then((matches) => {
+    if (matches.length === 0) dayRequestCache.delete(day);
+    return matches;
+  });
   dayRequestCache.set(day, request);
   return request;
 }
