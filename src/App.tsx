@@ -1050,8 +1050,6 @@ export function App() {
           <LogIn size={18} />
           <span className="auth-name">{activeUser.displayName}</span>
           <span className="league-pill">Liga {activeLeague?.code ?? defaultLeagueCode}</span>
-          <span className="role-pill">{activeUser.role}</span>
-          <span className={`sync-pill ${syncStatus}`}>{syncStatus === "ready" ? "online" : syncStatus}</span>
           <button className="logout-button" onClick={logout}>Sair</button>
         </div>
       </header>
