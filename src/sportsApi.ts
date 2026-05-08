@@ -42,7 +42,7 @@ export async function fetchTodayMatches(date = new Date(), options: { forceRefre
   const day = getLocalDateKey(date);
   if (!options.forceRefresh && dayRequestCache.has(day)) return dayRequestCache.get(day)!;
 
-  const request = fetchMatchesForDay(day, date).then((matches) => {
+  const request = fetchMatchesForDay(day, date, options.forceRefresh).then((matches) => {
     if (matches.length === 0) dayRequestCache.delete(day);
     return matches;
   });
@@ -57,8 +57,8 @@ export async function fetchMatchesForDates(dates: Date[], options: { forceRefres
   );
 }
 
-async function fetchMatchesForDay(day: string, now: Date) {
-  const apiFootballMatches = await fetchApiFootballMatches(day);
+async function fetchMatchesForDay(day: string, now: Date, forceRefresh = false) {
+  const apiFootballMatches = await fetchApiFootballMatches(day, forceRefresh);
   return sortUpcomingMatches(apiFootballMatches, day, now);
 }
 
@@ -68,8 +68,8 @@ function sortUpcomingMatches(matches: Match[], day: string, now: Date) {
   );
 }
 
-async function fetchApiFootballMatches(day: string) {
-  const serverMatches = await fetchServerApiFootballMatches(day);
+async function fetchApiFootballMatches(day: string, forceRefresh = false) {
+  const serverMatches = await fetchServerApiFootballMatches(day, forceRefresh);
   if (serverMatches.length > 0) return serverMatches;
 
   const apiKey = import.meta.env.VITE_API_FOOTBALL_KEY as string | undefined;
@@ -77,6 +77,7 @@ async function fetchApiFootballMatches(day: string) {
 
   try {
     const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${day}&timezone=Europe/Lisbon`, {
+      cache: "no-store",
       headers: {
         "x-apisports-key": apiKey
       }
@@ -90,9 +91,15 @@ async function fetchApiFootballMatches(day: string) {
   }
 }
 
-async function fetchServerApiFootballMatches(day: string) {
+async function fetchServerApiFootballMatches(day: string, forceRefresh = false) {
   try {
-    const response = await fetch(`/api/matches?date=${day}`);
+    const cacheBust = forceRefresh ? `&refresh=${Date.now()}` : "";
+    const response = await fetch(`/api/matches?date=${day}${cacheBust}`, {
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache"
+      }
+    });
     if (!response.ok) return [];
 
     const data = (await response.json()) as ApiFootballResponse;
