@@ -527,8 +527,14 @@ export function App() {
 
   const selectedMatch = visibleMatches.find((match) => match.id === selectedMatchId) ?? visibleMatches[0];
   const tipModalMatch = tipModalMatchId ? visibleMatches.find((match) => match.id === tipModalMatchId) ?? matches.find((match) => match.id === tipModalMatchId) : undefined;
-  const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id) : [];
-  const communityPicks = [...picks].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const isPickBeforeKickoff = (pick: Pick) => {
+    const match = matches.find((item) => item.id === pick.matchId);
+    return !match || new Date(match.startsAt).getTime() > kickoffCheckAt;
+  };
+  const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id && isPickBeforeKickoff(pick)) : [];
+  const communityPicks = [...picks]
+    .filter(isPickBeforeKickoff)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
     .filter((pick): pick is Pick => Boolean(pick));
