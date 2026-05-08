@@ -173,6 +173,13 @@ export async function fetchTodayMatches(date = new Date(), options: { forceRefre
   return request;
 }
 
+export async function fetchMatchesForDates(dates: Date[], options: { forceRefresh?: boolean } = {}) {
+  const results = await Promise.all(dates.map((date) => fetchTodayMatches(date, options)));
+  return buildMatchSlate(results.flat(), []).sort(
+    (left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()
+  );
+}
+
 async function fetchMatchesForDay(day: string, now: Date) {
   const apiFootballMatches = await fetchApiFootballMatches(day);
   if (apiFootballMatches.length > 0) return sortUpcomingMatches(apiFootballMatches, day, now);

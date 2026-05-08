@@ -29,7 +29,7 @@ import {
   scorePick,
   selectSlipPicks
 } from "./domain";
-import { fetchTodayMatches } from "./sportsApi";
+import { fetchMatchesForDates } from "./sportsApi";
 import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
 import { ensureLeagueMember, loadRemoteState, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updateProfileAvatar } from "./supabaseData";
@@ -37,12 +37,15 @@ import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, 
 
 const currentDate = new Date();
 const tipDay = getLocalDateKey(currentDate);
+const tomorrowDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000);
+const tomorrowDay = getLocalDateKey(tomorrowDate);
 const communityInitialBankroll = 100;
 const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
-const matchesCacheKey = `pickroom:matches:${tipDay}:${hasApiFootballKey ? "api-football-v2" : "free-v1"}`;
+const matchDates = [tipDay, tomorrowDay];
+const matchesCacheKey = `pickroom:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-v2" : "free-v1"}`;
 const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
-const oddsCacheKey = `pickroom:odds:${tipDay}`;
+const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}`;
 const slipCacheKey = `pickroom:slip:${tipDay}`;
 const slipHistoryCacheKey = `pickroom:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
@@ -432,7 +435,7 @@ export function App() {
       inFlight = true;
       if (showLoading) setSyncStatus("loading");
       try {
-        const remote = await loadRemoteState(tipDay, defaultLeagueCode);
+        const remote = await loadRemoteState(tipDay, defaultLeagueCode, matchDates);
         if (!mounted) return;
         setRemoteProfiles(remote.profiles);
         setActiveLeague(remote.league ?? null);
@@ -500,7 +503,7 @@ export function App() {
     }
 
     try {
-      const todayMatches = await fetchTodayMatches(currentDate, { forceRefresh });
+      const todayMatches = await fetchMatchesForDates([currentDate, tomorrowDate], { forceRefresh });
       const upcomingMatches = filterUpcomingScheduledMatches(todayMatches);
       if (todayMatches.length > 0) {
         setMatches(todayMatches);
@@ -697,12 +700,13 @@ export function App() {
         setMatchOdds(cachedOdds);
         return;
       }
-      const fetchedOdds = await fetchTodayOdds(tipDay);
+      const fetchedByDay = await Promise.all(matchDates.map(async (day) => ({ day, odds: await fetchTodayOdds(day) })));
+      const fetchedOdds = fetchedByDay.flatMap((item) => item.odds);
       if (cancelled || fetchedOdds.length === 0) return;
       setMatchOdds(fetchedOdds);
       if (isSupabaseConfigured) {
         try {
-          await saveOdds(tipDay, fetchedOdds);
+          await Promise.all(fetchedByDay.map((item) => saveOdds(item.day, item.odds)));
         } catch (error) {
           console.error("Failed to cache odds", error);
         }
@@ -1118,7 +1122,7 @@ export function App() {
         <section className="games-page">
           <section className="panel games-center">
             <div className="section-title spread games-toolbar">
-              <div><CalendarDays size={18} /><h3>Jogos de hoje</h3></div>
+              <div><CalendarDays size={18} /><h3>Jogos de hoje e amanhã</h3></div>
               <div className="games-actions">
                 <label className="match-search-field">
                   <span>Pesquisar</span>

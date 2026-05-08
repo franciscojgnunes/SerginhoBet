@@ -141,6 +141,17 @@ function normalizeMarketType(value: string): Pick["marketType"] {
   return value as Pick["marketType"];
 }
 
+function getLisbonDateKey(value: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Lisbon",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(value));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function mapPick(row: PickRow): Pick {
   return {
     id: row.id,
@@ -193,7 +204,7 @@ function mapSlip(row: SlipRow, pickIds: string[]): SlipHistoryItem {
   };
 }
 
-export async function loadRemoteState(day: string, leagueCode: string): Promise<RemoteState> {
+export async function loadRemoteState(day: string, leagueCode: string, matchDays = [day]): Promise<RemoteState> {
   if (!supabase) return { profiles: [], matches: [], odds: [], picks: [], votes: [], slipHistory: [] };
 
   const leagueResult = await supabase.from("leagues").select("id,code,name,streamer_id").eq("code", leagueCode).maybeSingle();
@@ -222,8 +233,8 @@ export async function loadRemoteState(day: string, leagueCode: string): Promise<
 
   const [profilesResult, matchesResult, oddsResult, picksResult, votesResult, slipsResult] = await Promise.all([
     supabase.from("profiles").select("id,twitch_id,display_name,avatar_url,role"),
-    supabase.from("matches").select("*").eq("day", day).order("starts_at", { ascending: true }),
-    supabase.from("match_odds").select("*").eq("day", day),
+    supabase.from("matches").select("*").in("day", matchDays).order("starts_at", { ascending: true }),
+    supabase.from("match_odds").select("*").in("day", matchDays),
     picksQuery,
     votesQuery,
     slipsQuery
@@ -341,7 +352,7 @@ export async function saveMatch(day: string, match: Match) {
 
 export async function savePick(day: string, pick: Pick, leagueId?: string, match?: Match) {
   if (!supabase) return;
-  if (match) await saveMatch(day, match);
+  if (match) await saveMatch(getLisbonDateKey(match.startsAt), match);
 
   const payload: Record<string, unknown> = {
     id: pick.id,
