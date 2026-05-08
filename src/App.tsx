@@ -152,6 +152,46 @@ function mergeById<T extends { id: string }>(items: T[]) {
   return Array.from(new Map(items.map((item) => [item.id, item])).values());
 }
 
+function isApiFootballMatch(match: Match) {
+  return match.id.startsWith("api-football-");
+}
+
+function keepApiFootballMatches(matches: Match[]) {
+  return matches.filter(isApiFootballMatch);
+}
+
+function competitionFilterKey(match: Match) {
+  return `${match.country ?? "Global"}|${match.competition}`;
+}
+
+function formatCompetitionFilterLabel(key: string) {
+  if (key === "all") return "Todas";
+  const [country, competition] = key.split("|");
+  return `${country} - ${competition}`;
+}
+
+function formatMatchCompetition(match: Match) {
+  return formatCompetitionFilterLabel(competitionFilterKey(match));
+}
+
+function competitionRank(key: string) {
+  const featured = [
+    "England|Premier League",
+    "Germany|Bundesliga",
+    "Spain|La Liga",
+    "Italy|Serie A",
+    "France|Ligue 1",
+    "Portugal|Primeira Liga",
+    "Portugal|Liga Portugal",
+    "World|UEFA Champions League",
+    "World|UEFA Europa League",
+    "World|Copa Libertadores",
+    "World|Copa Sudamericana"
+  ];
+  const index = featured.findIndex((item) => key.includes(item));
+  return index === -1 ? 999 : index;
+}
+
 function formatKickoff(value: string) {
   return new Intl.DateTimeFormat("pt-PT", {
     weekday: "short",
@@ -340,7 +380,9 @@ export function App() {
 
   useEffect(() => {
     if (matches.length > 0) {
-      const upcomingMatches = filterUpcomingScheduledMatches(matches);
+      const apiMatches = keepApiFootballMatches(matches);
+      if (apiMatches.length !== matches.length) setMatches(apiMatches);
+      const upcomingMatches = filterUpcomingScheduledMatches(apiMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
       return;
     }
@@ -442,10 +484,11 @@ export function App() {
         if (remote.league && authProfile) {
           void ensureLeagueMember(remote.league.id, authProfile.id, authProfile.role === "streamer" ? "streamer" : authProfile.role === "mod" ? "mod" : "member");
         }
-        if (remote.matches.length > 0) {
-          setMatches((current) => mergeById([...current, ...remote.matches]));
+        const remoteApiMatches = keepApiFootballMatches(remote.matches);
+        if (remoteApiMatches.length > 0) {
+          setMatches((current) => keepApiFootballMatches(mergeById([...current, ...remoteApiMatches])));
           setSelectedMatchId((current) => {
-            const mergedMatches = mergeById([...matches, ...remote.matches]);
+            const mergedMatches = keepApiFootballMatches(mergeById([...matches, ...remoteApiMatches]));
             return mergedMatches.some((match) => match.id === current) ? current : filterUpcomingScheduledMatches(mergedMatches)[0]?.id ?? "";
           });
           setMatchSync("live");
@@ -493,7 +536,7 @@ export function App() {
 
   async function syncTodayMatches(forceRefresh = false) {
     setMatchSync("loading");
-    const cachedMatches = readStoredValue<Match[]>(matchesCacheKey, []);
+    const cachedMatches = keepApiFootballMatches(readStoredValue<Match[]>(matchesCacheKey, []));
     if (!forceRefresh && cachedMatches.length > 0) {
       const upcomingMatches = filterUpcomingScheduledMatches(cachedMatches);
       setMatches(cachedMatches);
@@ -538,18 +581,26 @@ export function App() {
   const remoteActiveProfile = remoteProfiles.find((profile) => profile.id === activeUserId);
   const activeUser = remoteActiveProfile ?? authProfile ?? userById(activeUserId);
   const isStreamer = activeUser.role === "streamer";
-  const scheduledMatches = useMemo(() => filterUpcomingScheduledMatches(matches), [matches]);
+  const scheduledMatches = useMemo(() => filterUpcomingScheduledMatches(keepApiFootballMatches(matches)), [matches]);
   const competitionOptions = useMemo(
-    () => ["all", ...Array.from(new Set(scheduledMatches.map((match) => match.competition))).sort((a, b) => a.localeCompare(b))],
+    () => [
+      "all",
+      ...Array.from(new Set(scheduledMatches.map(competitionFilterKey))).sort((a, b) => {
+        const rankDelta = competitionRank(a) - competitionRank(b);
+        return rankDelta !== 0 ? rankDelta : formatCompetitionFilterLabel(a).localeCompare(formatCompetitionFilterLabel(b));
+      })
+    ],
     [scheduledMatches]
   );
   const visibleMatches = useMemo(
     () => {
       const normalizedQuery = matchSearch.trim().toLowerCase();
       return scheduledMatches.filter((match) => {
-        const matchesCompetition = competitionFilter === "all" || match.competition === competitionFilter;
+        const competitionLabel = formatCompetitionFilterLabel(competitionFilterKey(match));
+        const matchesCompetition = competitionFilter === "all" || competitionFilterKey(match) === competitionFilter;
         const matchesSearch = normalizedQuery.length === 0
           || match.competition.toLowerCase().includes(normalizedQuery)
+          || competitionLabel.toLowerCase().includes(normalizedQuery)
           || match.homeTeam.toLowerCase().includes(normalizedQuery)
           || match.awayTeam.toLowerCase().includes(normalizedQuery)
           || match.country?.toLowerCase().includes(normalizedQuery);
@@ -1136,7 +1187,7 @@ export function App() {
                 <select value={competitionFilter} onChange={(event) => setCompetitionFilter(event.target.value)} aria-label="Filtrar competição">
                   {competitionOptions.map((competition) => (
                     <option key={competition} value={competition}>
-                      {competition === "all" ? "Todas as competições" : competition}
+                      {competition === "all" ? "Todas as competições" : formatCompetitionFilterLabel(competition)}
                     </option>
                   ))}
                 </select>
@@ -1170,7 +1221,7 @@ export function App() {
                   role="button"
                   tabIndex={0}
                 >
-                  <span className="game-competition">{match.competition}</span>
+                  <span className="game-competition">{formatMatchCompetition(match)}</span>
                   <div className="teams-line">
                     <div className="team-side"><TeamLogo src={match.homeLogoUrl} name={match.homeTeam} /><strong>{match.homeTeam}</strong></div>
                     <span className="versus">vs</span>
@@ -1206,7 +1257,7 @@ export function App() {
                   <div><TeamLogo src={selectedMatch.awayLogoUrl} name={selectedMatch.awayTeam} /><strong>{selectedMatch.awayTeam}</strong></div>
                 </div>
                 <div className="detail-facts">
-                  <span>Competição <b>{selectedMatch.competition}</b></span>
+                  <span>Competição <b>{formatMatchCompetition(selectedMatch)}</b></span>
                   <span>Hora <b>{formatKickoff(selectedMatch.startsAt)}</b></span>
                   <span>Local <b>{selectedMatch.venue ?? "Sem estádio na API"}</b></span>
                   <span>Forma casa <b>{selectedMatch.homeRecord ?? "Sem histórico"}</b></span>
@@ -1481,7 +1532,7 @@ function TipModal({
       <section className="tip-modal-card">
         <div className="tip-modal-header">
           <div>
-            <span>{selectedMatch.competition}</span>
+            <span>{formatMatchCompetition(selectedMatch)}</span>
             <h3 id="tip-modal-title">{selectedMatch.homeTeam} vs {selectedMatch.awayTeam}</h3>
             <p>{formatKickoff(selectedMatch.startsAt)}</p>
           </div>
