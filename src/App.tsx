@@ -75,6 +75,10 @@ const marketPlaceholders: Record<MarketType, string> = {
   Outro: "Escreve o mercado"
 };
 
+const defaultSelectionsByMarket: Partial<Record<MarketType, string[]>> = {
+  "1X2": ["Casa vence", "Empate", "Fora vence"]
+};
+
 type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile";
 type StatsScope = ReturnType<typeof buildStatsScope>;
 type SyncStatus = "idle" | "loading" | "ready" | "saving" | "error";
@@ -1949,6 +1953,9 @@ function TipForm({
   onChange: React.Dispatch<React.SetStateAction<{ marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string }>>;
 }) {
   const availableOdds = (matchOdds ?? []).filter((odd) => odd.marketType === formState.marketType);
+  const selectionOptions = availableOdds.length > 0
+    ? availableOdds.map((odd) => odd.selection)
+    : defaultSelectionsByMarket[formState.marketType] ?? [];
 
   return (
     <section className="viewer-control">
@@ -1965,7 +1972,7 @@ function TipForm({
         </label>
         <label className="selection-field">
           Pick
-          {availableOdds.length > 0 ? (
+          {selectionOptions.length > 0 ? (
             <select
               value={formState.selection}
               onChange={(event) => {
@@ -1979,11 +1986,14 @@ function TipForm({
               }}
             >
               <option value="">Escolhe a pick</option>
-              {availableOdds.map((odd) => (
-                <option value={odd.selection} key={odd.id}>
-                  {odd.selection} @{odd.odds.toFixed(2)}
+              {selectionOptions.map((selection) => {
+                const odd = availableOdds.find((item) => item.selection === selection);
+                return (
+                <option value={selection} key={selection}>
+                  {odd ? `${selection} @${odd.odds.toFixed(2)}` : selection}
                 </option>
-              ))}
+                );
+              })}
             </select>
           ) : (
             <input placeholder={marketPlaceholders[formState.marketType]} value={formState.selection} onChange={(event) => onChange((state) => ({ ...state, selection: event.target.value }))} />
