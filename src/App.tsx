@@ -42,7 +42,7 @@ const tomorrowDay = getLocalDateKey(tomorrowDate);
 const communityInitialBankroll = 100;
 const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchDates = [tipDay, tomorrowDay];
-const matchesCacheKey = `pickroom:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v2" : "api-football-server-v2"}`;
+const matchesCacheKey = `pickroom:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v3" : "api-football-server-v3"}`;
 const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
 const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}`;
@@ -161,10 +161,19 @@ function keepApiFootballMatches(matches: Match[]) {
 }
 
 function hasMatchCoverage(matches: Match[], days: string[]) {
-  const coveredDays = new Set(
-    filterUpcomingScheduledMatches(keepApiFootballMatches(matches)).map((match) => getLocalDateKey(new Date(match.startsAt)))
-  );
-  return days.every((day) => coveredDays.has(day));
+  const scheduled = filterUpcomingScheduledMatches(keepApiFootballMatches(matches));
+  const matchesByDay = new Map<string, number>();
+  for (const match of scheduled) {
+    const day = getLocalDateKey(new Date(match.startsAt));
+    matchesByDay.set(day, (matchesByDay.get(day) ?? 0) + 1);
+  }
+  const hasEnoughPerDay = days.every((day) => (matchesByDay.get(day) ?? 0) >= 20);
+  const hasFeaturedTomorrow = scheduled.some((match) => {
+    const key = competitionFilterKey(match);
+    const day = getLocalDateKey(new Date(match.startsAt));
+    return day === tomorrowDay && competitionRank(key) < 999;
+  });
+  return hasEnoughPerDay && hasFeaturedTomorrow;
 }
 
 function competitionFilterKey(match: Match) {
@@ -604,17 +613,23 @@ export function App() {
   const visibleMatches = useMemo(
     () => {
       const normalizedQuery = matchSearch.trim().toLowerCase();
-      return scheduledMatches.filter((match) => {
-        const competitionLabel = formatCompetitionFilterLabel(competitionFilterKey(match));
-        const matchesCompetition = competitionFilter === "all" || competitionFilterKey(match) === competitionFilter;
-        const matchesSearch = normalizedQuery.length === 0
-          || match.competition.toLowerCase().includes(normalizedQuery)
-          || competitionLabel.toLowerCase().includes(normalizedQuery)
-          || match.homeTeam.toLowerCase().includes(normalizedQuery)
-          || match.awayTeam.toLowerCase().includes(normalizedQuery)
-          || match.country?.toLowerCase().includes(normalizedQuery);
-        return matchesCompetition && matchesSearch;
-      });
+      return scheduledMatches
+        .filter((match) => {
+          const competitionLabel = formatCompetitionFilterLabel(competitionFilterKey(match));
+          const matchesCompetition = competitionFilter === "all" || competitionFilterKey(match) === competitionFilter;
+          const matchesSearch = normalizedQuery.length === 0
+            || match.competition.toLowerCase().includes(normalizedQuery)
+            || competitionLabel.toLowerCase().includes(normalizedQuery)
+            || match.homeTeam.toLowerCase().includes(normalizedQuery)
+            || match.awayTeam.toLowerCase().includes(normalizedQuery)
+            || match.country?.toLowerCase().includes(normalizedQuery);
+          return matchesCompetition && matchesSearch;
+        })
+        .sort((left, right) => {
+          const rankDelta = competitionRank(competitionFilterKey(left)) - competitionRank(competitionFilterKey(right));
+          if (rankDelta !== 0) return rankDelta;
+          return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
+        });
     },
     [competitionFilter, matchSearch, scheduledMatches]
   );
