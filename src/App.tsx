@@ -1047,9 +1047,11 @@ export function App() {
             <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
             <button className={activePage === "profile" ? "active" : ""} onClick={() => setActivePage("profile")}>Perfil</button>
           </div>
-          <LogIn size={18} />
-          <span className="auth-name">{activeUser.displayName}</span>
-          <span className="league-pill">Liga {activeLeague?.code ?? defaultLeagueCode}</span>
+          <div className="topbar-account">
+            <Avatar user={activeUser} />
+            <span>{activeUser.displayName}</span>
+          </div>
+          <span className="league-pill">{activeLeague?.code ?? defaultLeagueCode}</span>
           <button className="logout-button" onClick={logout}>Sair</button>
         </div>
       </header>

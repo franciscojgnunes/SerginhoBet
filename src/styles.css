@@ -296,22 +296,27 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   display: flex;
-  gap: 10px;
-  padding: 8px;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px;
 }
 
 .page-tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .page-tabs button {
   background: transparent;
   border: 1px solid var(--line);
   color: var(--muted);
-  min-height: 38px;
-  position: relative;
+  font-size: 0.86rem;
+  min-height: 42px;
+  padding: 0 0.8rem;
   overflow: hidden;
+  position: relative;
+  white-space: nowrap;
 }
 
 .page-tabs button.active {
@@ -357,7 +362,9 @@ h1 {
   background: transparent;
   border: 1px solid var(--line);
   color: var(--muted);
-  min-height: 38px;
+  min-height: 42px;
+  padding: 0 0.9rem;
+  white-space: nowrap;
 }
 
 .login-panel select:focus,
@@ -395,14 +402,44 @@ h1 {
   display: inline-flex;
   font-size: 0.8rem;
   font-weight: 850;
-  min-height: 38px;
+  min-height: 42px;
   padding: 0 0.72rem;
 }
 
 .league-pill {
   background: rgba(183, 255, 52, 0.12);
   color: var(--lime);
+  font-size: 0.76rem;
+  letter-spacing: 0;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.topbar-account {
+  align-items: center;
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  display: inline-flex;
+  gap: 8px;
+  min-height: 42px;
+  min-width: 0;
+  padding: 0 0.82rem 0 0.28rem;
+}
+
+.topbar-account .avatar {
+  height: 30px;
+  width: 30px;
+}
+
+.topbar-account span {
+  font-size: 0.84rem;
+  font-weight: 900;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sync-pill {
