@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient";
-import type { DailySlip, League, Match, Pick, PickStatus, SlipHistoryItem, User, Vote } from "./types";
+import type { DailySlip, League, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote } from "./types";
 
 type ProfileRow = {
   id: string;
@@ -57,6 +57,16 @@ type VoteRow = {
   type: Vote["type"];
 };
 
+type MatchOddRow = {
+  id: string;
+  match_id: string;
+  market_type: MatchOdd["marketType"];
+  selection: string;
+  odds: number;
+  bookmaker: string;
+  fetched_at: string;
+};
+
 type SlipRow = {
   id: string;
   day: string;
@@ -80,6 +90,7 @@ export type RemoteState = {
   profiles: User[];
   league?: League;
   matches: Match[];
+  odds: MatchOdd[];
   picks: Pick[];
   votes: Vote[];
   dailySlip?: DailySlip;
@@ -150,6 +161,18 @@ function mapVote(row: VoteRow): Vote {
   };
 }
 
+function mapMatchOdd(row: MatchOddRow): MatchOdd {
+  return {
+    id: row.id,
+    matchId: row.match_id,
+    marketType: row.market_type,
+    selection: row.selection,
+    odds: Number(row.odds),
+    bookmaker: row.bookmaker,
+    fetchedAt: row.fetched_at
+  };
+}
+
 function mapSlip(row: SlipRow, pickIds: string[]): SlipHistoryItem {
   return {
     id: row.id,
@@ -166,7 +189,7 @@ function mapSlip(row: SlipRow, pickIds: string[]): SlipHistoryItem {
 }
 
 export async function loadRemoteState(day: string, leagueCode: string): Promise<RemoteState> {
-  if (!supabase) return { profiles: [], matches: [], picks: [], votes: [], slipHistory: [] };
+  if (!supabase) return { profiles: [], matches: [], odds: [], picks: [], votes: [], slipHistory: [] };
 
   const leagueResult = await supabase.from("leagues").select("id,code,name,streamer_id").eq("code", leagueCode).maybeSingle();
   const leagueTablesReady = !leagueResult.error;
@@ -192,9 +215,10 @@ export async function loadRemoteState(day: string, leagueCode: string): Promise<
       : supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).is("league_id", null).order("published_at", { ascending: false })
     : supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).order("published_at", { ascending: false });
 
-  const [profilesResult, matchesResult, picksResult, votesResult, slipsResult] = await Promise.all([
+  const [profilesResult, matchesResult, oddsResult, picksResult, votesResult, slipsResult] = await Promise.all([
     supabase.from("profiles").select("id,twitch_id,display_name,avatar_url,role"),
     supabase.from("matches").select("*").eq("day", day).order("starts_at", { ascending: true }),
+    supabase.from("match_odds").select("*").eq("day", day),
     picksQuery,
     votesQuery,
     slipsQuery
@@ -202,6 +226,7 @@ export async function loadRemoteState(day: string, leagueCode: string): Promise<
 
   if (profilesResult.error) throw profilesResult.error;
   if (matchesResult.error) throw matchesResult.error;
+  if (oddsResult.error) throw oddsResult.error;
   if (picksResult.error) throw picksResult.error;
   if (votesResult.error) throw votesResult.error;
   if (slipsResult.error) throw slipsResult.error;
@@ -215,11 +240,30 @@ export async function loadRemoteState(day: string, leagueCode: string): Promise<
     profiles: (profilesResult.data ?? []).map((row) => mapProfile(row as ProfileRow)),
     league,
     matches: (matchesResult.data ?? []).map((row) => mapMatch(row as MatchRow)),
+    odds: (oddsResult.data ?? []).map((row) => mapMatchOdd(row as MatchOddRow)),
     picks: (picksResult.data ?? []).map((row) => mapPick(row as PickRow)),
     votes: (votesResult.data ?? []).map((row) => mapVote(row as VoteRow)),
     dailySlip: slipHistory[0],
     slipHistory
   };
+}
+
+export async function saveOdds(day: string, odds: MatchOdd[]) {
+  if (!supabase || odds.length === 0) return;
+  const { error } = await supabase.from("match_odds").upsert(
+    odds.map((odd) => ({
+      id: odd.id,
+      day,
+      match_id: odd.matchId,
+      market_type: odd.marketType,
+      selection: odd.selection,
+      odds: odd.odds,
+      bookmaker: odd.bookmaker,
+      fetched_at: odd.fetchedAt
+    })),
+    { onConflict: "id" }
+  );
+  if (error) throw error;
 }
 
 export async function saveProfile(profile: User, twitchId?: string | null, avatarUrl?: string | null) {

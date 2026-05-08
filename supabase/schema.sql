@@ -83,6 +83,17 @@ create table public.votes (
   primary key (pick_id, user_id)
 );
 
+create table public.match_odds (
+  id text primary key,
+  day date not null,
+  match_id text not null,
+  market_type text not null,
+  selection text not null,
+  odds numeric(10, 2) not null check (odds > 1),
+  bookmaker text not null default 'API',
+  fetched_at timestamptz not null default now()
+);
+
 create table public.daily_slips (
   id text primary key,
   day date not null,
@@ -112,6 +123,7 @@ create index picks_league_day_created_at_idx on public.picks(league_id, day, cre
 create index picks_day_created_at_idx on public.picks(day, created_at desc);
 create index picks_user_day_idx on public.picks(user_id, day);
 create index votes_user_idx on public.votes(user_id);
+create index match_odds_day_match_idx on public.match_odds(day, match_id);
 create index daily_slips_league_day_published_at_idx on public.daily_slips(league_id, day, published_at desc);
 create index daily_slips_day_published_at_idx on public.daily_slips(day, published_at desc);
 create index slip_items_slip_sort_idx on public.slip_items(slip_id, sort_order);
@@ -183,6 +195,7 @@ alter table public.league_members enable row level security;
 alter table public.matches enable row level security;
 alter table public.picks enable row level security;
 alter table public.votes enable row level security;
+alter table public.match_odds enable row level security;
 alter table public.daily_slips enable row level security;
 alter table public.slip_items enable row level security;
 
@@ -259,6 +272,22 @@ create policy "votes are readable by logged users"
 on public.votes for select
 to authenticated
 using (true);
+
+create policy "match odds are readable by logged users"
+on public.match_odds for select
+to authenticated
+using (true);
+
+create policy "logged users cache match odds"
+on public.match_odds for insert
+to authenticated
+with check (true);
+
+create policy "logged users update match odds cache"
+on public.match_odds for update
+to authenticated
+using (true)
+with check (true);
 
 create policy "users vote as themselves"
 on public.votes for insert

@@ -71,6 +71,16 @@ export type Vote = {
   type: VoteType;
 };
 
+export type MatchOdd = {
+  id: string;
+  matchId: string;
+  marketType: MarketType;
+  selection: string;
+  odds: number;
+  bookmaker: string;
+  fetchedAt: string;
+};
+
 export type DailySlip = {
   status: "draft" | "published";
   mode: "combined" | "multiples";

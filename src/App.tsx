@@ -30,9 +30,10 @@ import {
   selectSlipPicks
 } from "./domain";
 import { fetchTodayMatches } from "./sportsApi";
+import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { ensureLeagueMember, loadRemoteState, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updateProfileAvatar } from "./supabaseData";
-import type { DailySlip, League, MarketType, Match, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
+import { ensureLeagueMember, loadRemoteState, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updateProfileAvatar } from "./supabaseData";
+import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
 const tipDay = getLocalDateKey(currentDate);
@@ -41,6 +42,7 @@ const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchesCacheKey = `pickroom:matches:${tipDay}:${hasApiFootballKey ? "api-football-v2" : "free-v1"}`;
 const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
+const oddsCacheKey = `pickroom:odds:${tipDay}`;
 const slipCacheKey = `pickroom:slip:${tipDay}`;
 const slipHistoryCacheKey = `pickroom:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
@@ -297,6 +299,7 @@ export function App() {
   ));
   const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []));
   const [votes, setVotes] = useState<VoteRecord[]>(() => readStoredValue<VoteRecord[]>(votesCacheKey, []));
+  const [matchOdds, setMatchOdds] = useState<MatchOdd[]>(() => readStoredValue<MatchOdd[]>(oddsCacheKey, []));
   const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
   const [slipHistory, setSlipHistory] = useState<SlipHistoryItem[]>(() => readStoredValue<SlipHistoryItem[]>(slipHistoryCacheKey, []));
   const [popup, setPopup] = useState<{ title: string; body: string } | null>(null);
@@ -332,6 +335,7 @@ export function App() {
   useEffect(() => writeStoredValue(matchesCacheKey, matches), [matches]);
   useEffect(() => writeStoredValue(picksCacheKey, picks), [picks]);
   useEffect(() => writeStoredValue(votesCacheKey, votes), [votes]);
+  useEffect(() => writeStoredValue(oddsCacheKey, matchOdds), [matchOdds]);
   useEffect(() => writeStoredValue(slipCacheKey, dailySlip), [dailySlip]);
   useEffect(() => writeStoredValue(slipHistoryCacheKey, slipHistory), [slipHistory]);
 
@@ -433,6 +437,7 @@ export function App() {
         }
         setPicks(remote.picks);
         setVotes(remote.votes);
+        if (remote.odds.length > 0) setMatchOdds(remote.odds);
         if (remote.dailySlip) {
           setDailySlip((current) => {
             const hasLocalDraft = current.status === "draft" && current.pickIds.length > 0 && current.generatedAt !== remote.dailySlip?.generatedAt;
@@ -551,6 +556,7 @@ export function App() {
 
   const selectedMatch = visibleMatches.find((match) => match.id === selectedMatchId) ?? visibleMatches[0];
   const tipModalMatch = tipModalMatchId ? visibleMatches.find((match) => match.id === tipModalMatchId) ?? matches.find((match) => match.id === tipModalMatchId) : undefined;
+  const tipModalOdds = tipModalMatch ? matchOdds.filter((odd) => odd.matchId === tipModalMatch.id) : [];
   const isPickBeforeKickoff = (pick: Pick) => {
     const match = matches.find((item) => item.id === pick.matchId);
     return !match || new Date(match.startsAt).getTime() > kickoffCheckAt;
@@ -669,6 +675,32 @@ export function App() {
     const timer = window.setInterval(() => setKickoffCheckAt(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn || matchOdds.length > 0) return;
+    let cancelled = false;
+    async function loadOddsOnce() {
+      const cachedOdds = readStoredValue<MatchOdd[]>(oddsCacheKey, []);
+      if (cachedOdds.length > 0) {
+        setMatchOdds(cachedOdds);
+        return;
+      }
+      const fetchedOdds = await fetchTodayOdds(tipDay);
+      if (cancelled || fetchedOdds.length === 0) return;
+      setMatchOdds(fetchedOdds);
+      if (isSupabaseConfigured) {
+        try {
+          await saveOdds(tipDay, fetchedOdds);
+        } catch (error) {
+          console.error("Failed to cache odds", error);
+        }
+      }
+    }
+    void loadOddsOnce();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, matchOdds.length]);
 
   useEffect(() => {
     if (!isLoggedIn || popup) return;
@@ -1347,6 +1379,7 @@ export function App() {
         <TipModal
           formState={formState}
           selectedMatch={tipModalMatch}
+          matchOdds={tipModalOdds}
           activeUser={activeUser}
           onSubmit={submitPick}
           onChange={setFormState}
@@ -1413,6 +1446,7 @@ function ConfirmSettlementPopup({
 function TipModal({
   formState,
   selectedMatch,
+  matchOdds,
   activeUser,
   onSubmit,
   onChange,
@@ -1420,6 +1454,7 @@ function TipModal({
 }: {
   formState: { marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string };
   selectedMatch: Match;
+  matchOdds: MatchOdd[];
   activeUser: User;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onChange: React.Dispatch<React.SetStateAction<{ marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string }>>;
@@ -1439,6 +1474,7 @@ function TipModal({
         <TipForm
           formState={formState}
           selectedMatch={selectedMatch}
+          matchOdds={matchOdds}
           activeUser={activeUser}
           onSubmit={onSubmit}
           onChange={onChange}
@@ -1900,16 +1936,20 @@ function HistoryPage({
 function TipForm({
   formState,
   selectedMatch,
+  matchOdds,
   activeUser,
   onSubmit,
   onChange
 }: {
   formState: { marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string };
   selectedMatch?: Match;
+  matchOdds?: MatchOdd[];
   activeUser: User;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onChange: React.Dispatch<React.SetStateAction<{ marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string }>>;
 }) {
+  const availableOdds = (matchOdds ?? []).filter((odd) => odd.marketType === formState.marketType);
+
   return (
     <section className="viewer-control">
       <div className="section-title">
@@ -1925,7 +1965,29 @@ function TipForm({
         </label>
         <label className="selection-field">
           Pick
-          <input placeholder={marketPlaceholders[formState.marketType]} value={formState.selection} onChange={(event) => onChange((state) => ({ ...state, selection: event.target.value }))} />
+          {availableOdds.length > 0 ? (
+            <select
+              value={formState.selection}
+              onChange={(event) => {
+                const selectedOdd = availableOdds.find((odd) => odd.selection === event.target.value);
+                onChange((state) => ({
+                  ...state,
+                  selection: event.target.value,
+                  odds: selectedOdd ? selectedOdd.odds.toFixed(2) : state.odds,
+                  bookmaker: selectedOdd?.bookmaker ?? state.bookmaker
+                }));
+              }}
+            >
+              <option value="">Escolhe a pick</option>
+              {availableOdds.map((odd) => (
+                <option value={odd.selection} key={odd.id}>
+                  {odd.selection} @{odd.odds.toFixed(2)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input placeholder={marketPlaceholders[formState.marketType]} value={formState.selection} onChange={(event) => onChange((state) => ({ ...state, selection: event.target.value }))} />
+          )}
         </label>
         <label>
           Odd
