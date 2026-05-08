@@ -32,7 +32,7 @@ import {
 import { fetchMatchesForDates } from "./sportsApi";
 import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { ensureLeagueMember, loadRemoteState, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updateProfileAvatar } from "./supabaseData";
+import { ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updateProfileAvatar } from "./supabaseData";
 import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -42,7 +42,7 @@ const tomorrowDay = getLocalDateKey(tomorrowDate);
 const communityInitialBankroll = 100;
 const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchDates = [tipDay, tomorrowDay];
-const matchesCacheKey = `pickroom:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v1" : "api-football-server-v1"}`;
+const matchesCacheKey = `pickroom:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v2" : "api-football-server-v2"}`;
 const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
 const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}`;
@@ -158,6 +158,13 @@ function isApiFootballMatch(match: Match) {
 
 function keepApiFootballMatches(matches: Match[]) {
   return matches.filter(isApiFootballMatch);
+}
+
+function hasMatchCoverage(matches: Match[], days: string[]) {
+  const coveredDays = new Set(
+    filterUpcomingScheduledMatches(keepApiFootballMatches(matches)).map((match) => getLocalDateKey(new Date(match.startsAt)))
+  );
+  return days.every((day) => coveredDays.has(day));
 }
 
 function competitionFilterKey(match: Match) {
@@ -384,6 +391,7 @@ export function App() {
       if (apiMatches.length !== matches.length) setMatches(apiMatches);
       const upcomingMatches = filterUpcomingScheduledMatches(apiMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
+      if (!hasMatchCoverage(apiMatches, matchDates)) void syncTodayMatches(true);
       return;
     }
     void syncTodayMatches();
@@ -537,7 +545,7 @@ export function App() {
   async function syncTodayMatches(forceRefresh = false) {
     setMatchSync("loading");
     const cachedMatches = keepApiFootballMatches(readStoredValue<Match[]>(matchesCacheKey, []));
-    if (!forceRefresh && cachedMatches.length > 0) {
+    if (!forceRefresh && cachedMatches.length > 0 && hasMatchCoverage(cachedMatches, matchDates)) {
       const upcomingMatches = filterUpcomingScheduledMatches(cachedMatches);
       setMatches(cachedMatches);
       setSelectedMatchId(upcomingMatches[0]?.id ?? "");
@@ -552,6 +560,7 @@ export function App() {
         setMatches(todayMatches);
         setSelectedMatchId(upcomingMatches[0]?.id ?? "");
         setMatchSync("live");
+        void saveMatches(todayMatches).catch((error) => console.error("Failed to cache matches", error));
         return;
       }
       if (cachedMatches.length > 0) {

@@ -350,6 +350,35 @@ export async function saveMatch(day: string, match: Match) {
   if (error) throw error;
 }
 
+export async function saveMatches(matches: Match[]) {
+  if (!supabase || matches.length === 0) return;
+  const rows = matches.map((match) => ({
+    id: match.id,
+    day: getLisbonDateKey(match.startsAt),
+    competition: match.competition,
+    country: match.country ?? null,
+    home_team: match.homeTeam,
+    away_team: match.awayTeam,
+    starts_at: match.startsAt,
+    status: match.status,
+    home_score: match.homeScore ?? null,
+    away_score: match.awayScore ?? null,
+    home_logo_url: match.homeLogoUrl ?? null,
+    away_logo_url: match.awayLogoUrl ?? null,
+    home_record: match.homeRecord ?? null,
+    away_record: match.awayRecord ?? null,
+    venue: match.venue ?? null,
+    source: match.source ?? "api"
+  }));
+
+  for (let index = 0; index < rows.length; index += 500) {
+    const { error } = await supabase
+      .from("matches")
+      .upsert(rows.slice(index, index + 500), { onConflict: "id", ignoreDuplicates: true });
+    if (error) throw error;
+  }
+}
+
 export async function savePick(day: string, pick: Pick, leagueId?: string, match?: Match) {
   if (!supabase) return;
   if (match) await saveMatch(getLisbonDateKey(match.startsAt), match);
