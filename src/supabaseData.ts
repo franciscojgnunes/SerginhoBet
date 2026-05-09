@@ -242,7 +242,8 @@ export async function loadRemoteState(day: string, leagueCode: string, matchDays
 
   if (profilesResult.error) throw profilesResult.error;
   if (matchesResult.error) throw matchesResult.error;
-  if (oddsResult.error) throw oddsResult.error;
+  const oddsTableMissing = oddsResult.error?.code === "PGRST205" || oddsResult.error?.message?.toLowerCase().includes("match_odds");
+  if (oddsResult.error && !oddsTableMissing) throw oddsResult.error;
   if (picksResult.error) throw picksResult.error;
   if (votesResult.error) throw votesResult.error;
   if (slipsResult.error) throw slipsResult.error;
@@ -256,7 +257,7 @@ export async function loadRemoteState(day: string, leagueCode: string, matchDays
     profiles: (profilesResult.data ?? []).map((row) => mapProfile(row as ProfileRow)),
     league,
     matches: (matchesResult.data ?? []).map((row) => mapMatch(row as MatchRow)),
-    odds: (oddsResult.data ?? []).map((row) => mapMatchOdd(row as MatchOddRow)),
+    odds: oddsTableMissing ? [] : (oddsResult.data ?? []).map((row) => mapMatchOdd(row as MatchOddRow)),
     picks: (picksResult.data ?? []).map((row) => mapPick(row as PickRow)),
     votes: (votesResult.data ?? []).map((row) => mapVote(row as VoteRow)),
     dailySlip: slipHistory[0],
