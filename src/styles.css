@@ -102,11 +102,26 @@ body {
 
 body.overlay-body {
   background: transparent !important;
+  height: fit-content;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  width: fit-content;
+}
+
+html:has(body.overlay-body) {
+  background: transparent !important;
+  height: fit-content;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  width: fit-content;
 }
 
 body.overlay-body #root {
   display: inline-block;
+  height: fit-content;
+  width: fit-content;
 }
 
 button,
@@ -2307,8 +2322,10 @@ h1 {
   background: transparent;
   display: inline-flex;
   justify-content: flex-start;
+  height: fit-content;
   min-height: 0;
   padding: 0;
+  width: fit-content;
 }
 
 .stream-overlay-card {
