@@ -45,7 +45,7 @@ const matchDates = [tipDay, tomorrowDay];
 const matchesCacheKey = `pickroom:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v4" : "api-football-server-v4"}`;
 const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
-const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}`;
+const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}:all-markets-v1`;
 const slipCacheKey = `pickroom:slip:${tipDay}`;
 const slipHistoryCacheKey = `pickroom:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
@@ -158,6 +158,10 @@ function isApiFootballMatch(match: Match) {
 
 function keepApiFootballMatches(matches: Match[]) {
   return matches.filter(isApiFootballMatch);
+}
+
+function hasExpandedOdds(odds: MatchOdd[]) {
+  return odds.some((odd) => odd.marketType !== "1X2");
 }
 
 function hasMatchCoverage(matches: Match[], days: string[]) {
@@ -767,11 +771,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!isLoggedIn || matchOdds.length > 0) return;
+    if (!isLoggedIn || hasExpandedOdds(matchOdds)) return;
     let cancelled = false;
     async function loadOddsOnce() {
       const cachedOdds = readStoredValue<MatchOdd[]>(oddsCacheKey, []);
-      if (cachedOdds.length > 0) {
+      if (cachedOdds.length > 0 && hasExpandedOdds(cachedOdds)) {
         setMatchOdds(cachedOdds);
         return;
       }
