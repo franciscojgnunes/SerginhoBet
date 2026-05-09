@@ -45,7 +45,7 @@ const matchDates = [tipDay, tomorrowDay];
 const matchesCacheKey = `pickroom:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v4" : "api-football-server-v4"}`;
 const picksCacheKey = `pickroom:picks:${tipDay}`;
 const votesCacheKey = `pickroom:votes:${tipDay}`;
-const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}:average-markets-v2`;
+const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}:average-markets-v3`;
 const slipCacheKey = `pickroom:slip:${tipDay}`;
 const slipHistoryCacheKey = `pickroom:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
@@ -56,6 +56,8 @@ const marketOptions: MarketType[] = [
   "Over/Under",
   "Ambas marcam",
   "Handicap",
+  "Intervalo",
+  "Golos ao intervalo",
   "Resultado correto",
   "Intervalo/Final",
   "Marcador",
@@ -70,6 +72,8 @@ const marketPlaceholders: Record<MarketType, string> = {
   "Over/Under": "Mais de 2.5 golos",
   "Ambas marcam": "Ambas marcam: Sim",
   Handicap: "Casa -1.0",
+  Intervalo: "Casa vence / Empate / Fora vence",
+  "Golos ao intervalo": "Mais de 0.5 golos ao intervalo",
   "Resultado correto": "2-1",
   "Intervalo/Final": "Empate / Casa",
   Marcador: "Jogador marca a qualquer momento",
@@ -84,6 +88,8 @@ const defaultSelectionsByMarket: Partial<Record<MarketType, string[]>> = {
   "Over/Under": ["Mais de 0.5 golos", "Mais de 1.5 golos", "Mais de 2.5 golos", "Mais de 3.5 golos", "Menos de 0.5 golos", "Menos de 1.5 golos", "Menos de 2.5 golos", "Menos de 3.5 golos"],
   "Ambas marcam": ["Ambas marcam: Sim", "Ambas marcam: Não"],
   Handicap: ["Casa -1.0", "Casa +1.0", "Fora -1.0", "Fora +1.0"],
+  Intervalo: ["Casa vence", "Empate", "Fora vence"],
+  "Golos ao intervalo": ["Mais de 0.5 golos ao intervalo", "Mais de 1.5 golos ao intervalo", "Mais de 2.5 golos ao intervalo", "Menos de 0.5 golos ao intervalo", "Menos de 1.5 golos ao intervalo", "Menos de 2.5 golos ao intervalo"],
   "Resultado correto": ["1-0", "2-0", "2-1", "0-0", "1-1", "0-1", "0-2", "1-2"],
   "Intervalo/Final": ["Casa/Casa", "Empate/Casa", "Empate/Empate", "Empate/Fora", "Fora/Fora"],
   Cartoes: ["Mais de 3.5 cartões", "Mais de 4.5 cartões", "Mais de 5.5 cartões", "Menos de 4.5 cartões", "Menos de 5.5 cartões"],
@@ -842,11 +848,14 @@ export function App() {
   function submitPick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const stake = Number(formState.stake);
+    const manualOdds = Number(formState.odds);
     const targetMatch = tipModalMatch ?? selectedMatch;
     const apiOdd = targetMatch
       ? matchOdds.find((odd) => odd.matchId === targetMatch.id && odd.marketType === formState.marketType && odd.selection === formState.selection)
       : undefined;
-    if (!targetMatch || !apiOdd || !formState.selection.trim() || apiOdd.odds <= 1 || stake <= 0) return;
+    const finalOdds = apiOdd?.odds ?? manualOdds;
+    const bookmaker = apiOdd?.bookmaker ?? (formState.bookmaker.trim() || "Manual");
+    if (!targetMatch || !formState.selection.trim() || finalOdds <= 1 || stake <= 0) return;
 
     const nextPick: Pick = {
       id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -854,9 +863,9 @@ export function App() {
       userId: activeUserId,
       marketType: formState.marketType,
       selection: formState.selection.trim(),
-      odds: apiOdd.odds,
+      odds: finalOdds,
       stake,
-      bookmaker: apiOdd.bookmaker,
+      bookmaker,
       reason: formState.reason.trim() || "Sem justificação.",
       status: "pending",
       profit: 0,
@@ -2048,7 +2057,12 @@ function TipForm({
   const availableOdds = (matchOdds ?? []).filter((odd) => odd.marketType === formState.marketType);
   const selectionOptions = availableOdds.map((odd) => odd.selection);
   const selectedOdd = availableOdds.find((odd) => odd.selection === formState.selection);
-  const canSubmit = Boolean(selectedMatch && selectedOdd);
+  const hasApiOdds = selectionOptions.length > 0;
+  const canSubmit = Boolean(
+    selectedMatch
+    && formState.selection.trim()
+    && (selectedOdd || (!hasApiOdds && Number(formState.odds) > 1))
+  );
 
   return (
     <section className="viewer-control">
@@ -2065,34 +2079,45 @@ function TipForm({
         </label>
         <label className="selection-field">
           Pick
-          <select
-            value={formState.selection}
-            disabled={selectionOptions.length === 0}
-            onChange={(event) => {
-              const nextOdd = availableOdds.find((odd) => odd.selection === event.target.value);
-              onChange((state) => ({
-                ...state,
-                selection: event.target.value,
-                odds: nextOdd ? nextOdd.odds.toFixed(2) : "",
-                bookmaker: nextOdd?.bookmaker ?? state.bookmaker
-              }));
-            }}
-          >
-            <option value="">{selectionOptions.length > 0 ? "Escolhe a pick" : "Sem odds API neste mercado"}</option>
-            {selectionOptions.map((selection) => {
-              const odd = availableOdds.find((item) => item.selection === selection);
-              return (
-              <option value={selection} key={selection}>
-                {odd ? `${selection} @${odd.odds.toFixed(2)}` : selection}
-              </option>
-              );
-            })}
-          </select>
+          {hasApiOdds ? (
+            <select
+              value={formState.selection}
+              onChange={(event) => {
+                const nextOdd = availableOdds.find((odd) => odd.selection === event.target.value);
+                onChange((state) => ({
+                  ...state,
+                  selection: event.target.value,
+                  odds: nextOdd ? nextOdd.odds.toFixed(2) : "",
+                  bookmaker: nextOdd?.bookmaker ?? state.bookmaker
+                }));
+              }}
+            >
+              <option value="">Escolhe a pick</option>
+              {selectionOptions.map((selection) => {
+                const odd = availableOdds.find((item) => item.selection === selection);
+                return (
+                <option value={selection} key={selection}>
+                  {odd ? `${selection} @${odd.odds.toFixed(2)}` : selection}
+                </option>
+                );
+              })}
+            </select>
+          ) : (
+            <input placeholder={marketPlaceholders[formState.marketType]} value={formState.selection} onChange={(event) => onChange((state) => ({ ...state, selection: event.target.value, bookmaker: "Manual" }))} />
+          )}
         </label>
         <label>
           Odd
-          <input type="number" step="0.01" min="1.01" value={selectedOdd ? selectedOdd.odds.toFixed(2) : ""} readOnly disabled />
-          <span className="field-note">{selectedOdd ? `Odd bloqueada via ${selectedOdd.bookmaker}` : "Escolhe uma pick com odd API."}</span>
+          <input
+            type="number"
+            step="0.01"
+            min="1.01"
+            value={hasApiOdds ? selectedOdd?.odds.toFixed(2) ?? "" : formState.odds}
+            readOnly={hasApiOdds}
+            disabled={hasApiOdds}
+            onChange={(event) => onChange((state) => ({ ...state, odds: event.target.value, bookmaker: "Manual" }))}
+          />
+          <span className="field-note">{selectedOdd ? `Odd bloqueada via ${selectedOdd.bookmaker}` : "Sem odds API: escreve a pick e a odd manualmente."}</span>
         </label>
         <label>
           Stake sugerida

@@ -63,6 +63,12 @@ function normalizeHalfFull(value) {
   return parts.length === 2 ? `${parts[0]}/${parts[1]}` : normalizeSelection(text);
 }
 
+function normalizeCorrectScore(value) {
+  const text = String(value ?? "").trim();
+  const score = text.match(/(\d+)\D+(\d+)/);
+  return score ? `${Number(score[1])}-${Number(score[2])}` : text;
+}
+
 function normalizeBetName(value) {
   return String(value ?? "")
     .toLowerCase()
@@ -101,6 +107,30 @@ function isMainCardsMarket(name) {
   ].includes(name);
 }
 
+function isHalfTimeResultMarket(name) {
+  return [
+    "1st half winner",
+    "first half winner",
+    "half time result",
+    "halftime result",
+    "half time winner",
+    "ht result"
+  ].includes(name);
+}
+
+function isHalfTimeGoalsMarket(name) {
+  return [
+    "1st half goals over/under",
+    "first half goals over/under",
+    "1st half over/under",
+    "first half over/under",
+    "1st half total goals",
+    "first half total goals",
+    "half time goals over/under",
+    "halftime goals over/under"
+  ].includes(name);
+}
+
 function mapBetToMarket(betName, rawValue) {
   const name = normalizeBetName(betName);
 
@@ -116,6 +146,12 @@ function mapBetToMarket(betName, rawValue) {
   if (isMainTotalGoalsMarket(name)) {
     return { marketType: "Over/Under", selection: normalizeOverUnder(rawValue) };
   }
+  if (isHalfTimeResultMarket(name)) {
+    return { marketType: "Intervalo", selection: normalizeSelection(rawValue) };
+  }
+  if (isHalfTimeGoalsMarket(name)) {
+    return { marketType: "Golos ao intervalo", selection: normalizeOverUnder(rawValue, "golos ao intervalo") };
+  }
   if (isMainCornersMarket(name)) {
     return { marketType: "Cantos", selection: normalizeOverUnder(rawValue, "cantos") };
   }
@@ -123,7 +159,7 @@ function mapBetToMarket(betName, rawValue) {
     return { marketType: "Cartoes", selection: normalizeOverUnder(rawValue, "cartoes") };
   }
   if (name.includes("correct score") || name.includes("exact score")) {
-    return { marketType: "Resultado correto", selection: String(rawValue ?? "") };
+    return { marketType: "Resultado correto", selection: normalizeCorrectScore(rawValue) };
   }
   if (name.includes("half time/full time") || name.includes("halftime/fulltime") || name.includes("ht/ft")) {
     return { marketType: "Intervalo/Final", selection: normalizeHalfFull(rawValue) };
@@ -142,6 +178,7 @@ const allowedSelectionsByMarket = {
   "1X2": new Set(["Casa vence", "Empate", "Fora vence"]),
   "Dupla chance": new Set(["Casa ou empate", "Casa ou fora", "Empate ou fora"]),
   "Ambas marcam": new Set(["Ambas marcam: Sim", "Ambas marcam: Não"]),
+  Intervalo: new Set(["Casa vence", "Empate", "Fora vence"]),
   "Over/Under": new Set([
     "Mais de 0.5 golos",
     "Mais de 1.5 golos",
@@ -151,6 +188,14 @@ const allowedSelectionsByMarket = {
     "Menos de 1.5 golos",
     "Menos de 2.5 golos",
     "Menos de 3.5 golos"
+  ]),
+  "Golos ao intervalo": new Set([
+    "Mais de 0.5 golos ao intervalo",
+    "Mais de 1.5 golos ao intervalo",
+    "Mais de 2.5 golos ao intervalo",
+    "Menos de 0.5 golos ao intervalo",
+    "Menos de 1.5 golos ao intervalo",
+    "Menos de 2.5 golos ao intervalo"
   ]),
   "Resultado correto": new Set(["0-0", "1-0", "2-0", "2-1", "1-1", "0-1", "0-2", "1-2"]),
   "Intervalo/Final": new Set([

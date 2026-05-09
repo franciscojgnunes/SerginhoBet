@@ -6,6 +6,8 @@ export type MarketType =
   | "Over/Under"
   | "Ambas marcam"
   | "Handicap"
+  | "Intervalo"
+  | "Golos ao intervalo"
   | "Resultado correto"
   | "Intervalo/Final"
   | "Marcador"
