@@ -1536,6 +1536,20 @@ h1 {
   min-width: 0;
 }
 
+.pick-form input:disabled,
+.pick-form select:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.field-note {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.25;
+  text-transform: none;
+}
+
 .pick-form .reason-field {
   grid-column: 1 / -2;
 }

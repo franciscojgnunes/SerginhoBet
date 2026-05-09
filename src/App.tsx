@@ -841,10 +841,12 @@ export function App() {
 
   function submitPick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const odds = Number(formState.odds);
     const stake = Number(formState.stake);
     const targetMatch = tipModalMatch ?? selectedMatch;
-    if (!targetMatch || !formState.selection.trim() || odds <= 1 || stake <= 0) return;
+    const apiOdd = targetMatch
+      ? matchOdds.find((odd) => odd.matchId === targetMatch.id && odd.marketType === formState.marketType && odd.selection === formState.selection)
+      : undefined;
+    if (!targetMatch || !apiOdd || !formState.selection.trim() || apiOdd.odds <= 1 || stake <= 0) return;
 
     const nextPick: Pick = {
       id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -852,9 +854,9 @@ export function App() {
       userId: activeUserId,
       marketType: formState.marketType,
       selection: formState.selection.trim(),
-      odds,
+      odds: apiOdd.odds,
       stake,
-      bookmaker: formState.bookmaker.trim() || "Manual",
+      bookmaker: apiOdd.bookmaker,
       reason: formState.reason.trim() || "Sem justificação.",
       status: "pending",
       profit: 0,
@@ -2044,9 +2046,9 @@ function TipForm({
   onChange: React.Dispatch<React.SetStateAction<{ marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string }>>;
 }) {
   const availableOdds = (matchOdds ?? []).filter((odd) => odd.marketType === formState.marketType);
-  const selectionOptions = availableOdds.length > 0
-    ? availableOdds.map((odd) => odd.selection)
-    : defaultSelectionsByMarket[formState.marketType] ?? [];
+  const selectionOptions = availableOdds.map((odd) => odd.selection);
+  const selectedOdd = availableOdds.find((odd) => odd.selection === formState.selection);
+  const canSubmit = Boolean(selectedMatch && selectedOdd);
 
   return (
     <section className="viewer-control">
@@ -2057,52 +2059,51 @@ function TipForm({
       <form className="pick-form" onSubmit={onSubmit}>
         <label>
           Mercado
-          <select value={formState.marketType} onChange={(event) => onChange((state) => ({ ...state, marketType: event.target.value as MarketType, selection: "" }))}>
+          <select value={formState.marketType} onChange={(event) => onChange((state) => ({ ...state, marketType: event.target.value as MarketType, selection: "", odds: "", bookmaker: "API-Football" }))}>
             {marketOptions.map((market) => <option key={market}>{market}</option>)}
           </select>
         </label>
         <label className="selection-field">
           Pick
-          {selectionOptions.length > 0 ? (
-            <select
-              value={formState.selection}
-              onChange={(event) => {
-                const selectedOdd = availableOdds.find((odd) => odd.selection === event.target.value);
-                onChange((state) => ({
-                  ...state,
-                  selection: event.target.value,
-                  odds: selectedOdd ? selectedOdd.odds.toFixed(2) : state.odds,
-                  bookmaker: selectedOdd?.bookmaker ?? state.bookmaker
-                }));
-              }}
-            >
-              <option value="">Escolhe a pick</option>
-              {selectionOptions.map((selection) => {
-                const odd = availableOdds.find((item) => item.selection === selection);
-                return (
-                <option value={selection} key={selection}>
-                  {odd ? `${selection} @${odd.odds.toFixed(2)}` : selection}
-                </option>
-                );
-              })}
-            </select>
-          ) : (
-            <input placeholder={marketPlaceholders[formState.marketType]} value={formState.selection} onChange={(event) => onChange((state) => ({ ...state, selection: event.target.value }))} />
-          )}
+          <select
+            value={formState.selection}
+            disabled={selectionOptions.length === 0}
+            onChange={(event) => {
+              const nextOdd = availableOdds.find((odd) => odd.selection === event.target.value);
+              onChange((state) => ({
+                ...state,
+                selection: event.target.value,
+                odds: nextOdd ? nextOdd.odds.toFixed(2) : "",
+                bookmaker: nextOdd?.bookmaker ?? state.bookmaker
+              }));
+            }}
+          >
+            <option value="">{selectionOptions.length > 0 ? "Escolhe a pick" : "Sem odds API neste mercado"}</option>
+            {selectionOptions.map((selection) => {
+              const odd = availableOdds.find((item) => item.selection === selection);
+              return (
+              <option value={selection} key={selection}>
+                {odd ? `${selection} @${odd.odds.toFixed(2)}` : selection}
+              </option>
+              );
+            })}
+          </select>
         </label>
         <label>
           Odd
-          <input type="number" step="0.01" min="1.01" value={formState.odds} onChange={(event) => onChange((state) => ({ ...state, odds: event.target.value }))} />
+          <input type="number" step="0.01" min="1.01" value={selectedOdd ? selectedOdd.odds.toFixed(2) : ""} readOnly disabled />
+          <span className="field-note">{selectedOdd ? `Odd bloqueada via ${selectedOdd.bookmaker}` : "Escolhe uma pick com odd API."}</span>
         </label>
         <label>
-          Stake
+          Stake sugerida
           <input type="number" step="0.5" min="0.5" value={formState.stake} onChange={(event) => onChange((state) => ({ ...state, stake: event.target.value }))} />
+          <span className="field-note">Nao altera a stake da combinada coletiva.</span>
         </label>
         <label className="reason-field">
           Argumento opcional
           <textarea placeholder="Porque é que a comunidade deve confiar nesta pick?" value={formState.reason} onChange={(event) => onChange((state) => ({ ...state, reason: event.target.value }))} />
         </label>
-        <button type="submit" disabled={!selectedMatch}>Submeter tip</button>
+        <button type="submit" disabled={!canSubmit}>Submeter tip</button>
       </form>
     </section>
   );
