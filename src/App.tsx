@@ -398,6 +398,7 @@ function TeamLogo({ src, name }: { src?: string; name: string }) {
 
 export function App() {
   clearLegacyStatsCache();
+  const [isOverlayRoute] = useState(() => window.location.pathname === "/overlay" || window.location.hash === "#overlay");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeUserId, setActiveUserId] = useState("u-serginho");
   const [authProfile, setAuthProfile] = useState<User | null>(null);
@@ -528,7 +529,7 @@ export function App() {
   }, [authProfile, remoteProfiles]);
 
   useEffect(() => {
-    if (!isLoggedIn || !isSupabaseConfigured) return;
+    if ((!isLoggedIn && !isOverlayRoute) || !isSupabaseConfigured) return;
 
     let mounted = true;
     let inFlight = false;
@@ -581,7 +582,12 @@ export function App() {
       mounted = false;
       window.clearInterval(refreshTimer);
     };
-  }, [authProfile, isLoggedIn]);
+  }, [authProfile, isLoggedIn, isOverlayRoute]);
+
+  useEffect(() => {
+    document.body.classList.toggle("overlay-body", isOverlayRoute);
+    return () => document.body.classList.remove("overlay-body");
+  }, [isOverlayRoute]);
 
   useEffect(() => {
     const pendingSlips = slipHistory.filter((slip) => slip.settlementStatus === "pending");
@@ -1183,6 +1189,19 @@ export function App() {
           ) : null}
         </div>
       </article>
+    );
+  }
+
+  if (isOverlayRoute) {
+    return (
+      <OverlayPage
+        slip={dailySlip}
+        picks={topSlipPicks}
+        matches={matches}
+        combinedOdds={combinedOdds}
+        multiplesStake={multiplesStake}
+        syncStatus={syncStatus}
+      />
     );
   }
 
@@ -2228,6 +2247,83 @@ function SlipPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function OverlayPage({
+  slip,
+  picks,
+  matches,
+  combinedOdds,
+  multiplesStake,
+  syncStatus
+}: {
+  slip: DailySlip;
+  picks: Pick[];
+  matches: Match[];
+  combinedOdds: number;
+  multiplesStake: number;
+  syncStatus: SyncStatus;
+}) {
+  const isPublished = slip.status === "published" && picks.length > 0;
+  const modeLabel = slip.mode === "combined" ? "Combinada" : "Multiplas";
+  const stake = slip.mode === "combined" ? slip.combinedStake : multiplesStake;
+  const possibleReturn = slip.mode === "combined" ? roundUnits(stake * combinedOdds) : 0;
+  const status = slip.mode === "combined" ? slip.settlementStatus : "pending";
+  const statusText = isPublished ? statusLabel(status) : syncStatus === "loading" ? "A carregar" : "Sem aposta";
+
+  return (
+    <main className="overlay-screen">
+      <section className={`stream-overlay-card ${isPublished ? "published" : "empty"}`}>
+        <header className="overlay-header">
+          <div className="overlay-brand">
+            <img src="/serginhobet-icon.svg" alt="" />
+            <div>
+              <strong>SerginhoBet</strong>
+              <span>Aposta diaria</span>
+            </div>
+          </div>
+          <span className={`overlay-status ${status}`}>{statusText}</span>
+        </header>
+
+        {isPublished ? (
+          <>
+            <div className="overlay-main-metric">
+              <span>{modeLabel}</span>
+              <strong>{slip.mode === "combined" ? combinedOdds.toFixed(2) : `${picks.length} picks`}</strong>
+            </div>
+
+            <div className="overlay-metrics">
+              <span>Stake <b>{stake.toFixed(2)}u</b></span>
+              {slip.mode === "combined" ? <span>Retorno <b>{possibleReturn.toFixed(2)}u</b></span> : null}
+              <span>Picks <b>{picks.length}</b></span>
+            </div>
+
+            <div className="overlay-pick-list">
+              {picks.slice(0, 6).map((pick, index) => {
+                const match = matches.find((item) => item.id === pick.matchId);
+                return (
+                  <article className="overlay-pick" key={pick.id}>
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{pick.selection}</strong>
+                      <small>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</small>
+                    </div>
+                    <b>@{pick.odds.toFixed(2)}</b>
+                  </article>
+                );
+              })}
+              {picks.length > 6 ? <div className="overlay-more">+{picks.length - 6} picks no boletim</div> : null}
+            </div>
+          </>
+        ) : (
+          <div className="overlay-empty-state">
+            <strong>Aposta ainda nao publicada</strong>
+            <span>Quando o streamer publicar o boletim, aparece aqui automaticamente.</span>
+          </div>
+        )}
+      </section>
+    </main>
   );
 }
 
