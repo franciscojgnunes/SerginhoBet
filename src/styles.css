@@ -101,7 +101,12 @@ body {
 }
 
 body.overlay-body {
-  background: transparent;
+  background: transparent !important;
+  min-height: 0;
+}
+
+body.overlay-body #root {
+  display: inline-block;
 }
 
 button,
@@ -2300,10 +2305,10 @@ h1 {
 .overlay-screen {
   align-items: flex-start;
   background: transparent;
-  display: flex;
+  display: inline-flex;
   justify-content: flex-start;
-  min-height: 100vh;
-  padding: 18px;
+  min-height: 0;
+  padding: 0;
 }
 
 .stream-overlay-card {
