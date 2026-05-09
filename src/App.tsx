@@ -49,6 +49,7 @@ const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}:average-markets-v3`
 const slipCacheKey = `pickroom:slip:${tipDay}`;
 const slipHistoryCacheKey = `pickroom:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
+const fallbackUser: User = { id: "unknown-user", displayName: "Utilizador", role: "viewer", avatarColor: "#16d782" };
 
 const marketOptions: MarketType[] = [
   "1X2",
@@ -257,7 +258,7 @@ function matchStatusLabel(match: Match) {
 }
 
 function userById(userId: string) {
-  return runtimeUsers.find((user) => user.id === userId) ?? users.find((user) => user.id === userId) ?? users[0];
+  return runtimeUsers.find((user) => user.id === userId) ?? users.find((user) => user.id === userId) ?? fallbackUser;
 }
 
 function buildStatsScope(label: string, picks: Pick[], slips: SlipHistoryItem[], filter: (value: string) => boolean) {
@@ -2435,11 +2436,35 @@ function StatsDashboard({
   bankroll: ReturnType<typeof calculateBankroll>;
   monthName: string;
 }) {
-  const giveawayLeader = monthlyLeaderboard.find((row) => row.picks > 0) ?? monthlyLeaderboard[0];
-  const eligibleViewers = monthlyLeaderboard.filter((row) => row.picks > 0).length;
+  const monthLeader = monthlyLeaderboard.find((row) => row.picks > 0);
+  const generalLeader = generalLeaderboard.find((row) => row.picks > 0);
 
   return (
     <section className="stats-page">
+      <section className="panel stats-overview-panel">
+        <div className="section-title spread">
+          <div><Trophy size={18} /><h3>Resumo competitivo</h3></div>
+          <span>{monthName}</span>
+        </div>
+        <div className="stats-overview-grid">
+          <span>
+            Lider de {monthName}
+            <b>{monthLeader ? monthLeader.user.displayName : "Ainda sem resolvidas"}</b>
+            <small>{monthLeader ? `${monthLeader.profit >= 0 ? "+" : ""}${monthLeader.profit.toFixed(2)}u - ROI ${monthLeader.roi.toFixed(1)}%` : "Resolve uma aposta final para iniciar ranking."}</small>
+          </span>
+          <span>
+            Lider geral
+            <b>{generalLeader ? generalLeader.user.displayName : "Ainda sem resolvidas"}</b>
+            <small>{generalLeader ? `${generalLeader.profit >= 0 ? "+" : ""}${generalLeader.profit.toFixed(2)}u - ROI ${generalLeader.roi.toFixed(1)}%` : "Sem historico fechado."}</small>
+          </span>
+          <span>
+            Banca atual
+            <b>{bankroll.current.toFixed(2)}u</b>
+            <small>{bankroll.exposure.toFixed(2)}u expostas - {(bankroll.current - bankroll.exposure).toFixed(2)}u livres</small>
+          </span>
+        </div>
+      </section>
+
       <section className="panel stats-hero-panel">
         <div className="section-title"><LineChart size={18} /><h3>Estatisticas do dia</h3></div>
         <StatsMetricGrid scope={dayScope} bankroll={bankroll} />
@@ -2456,29 +2481,6 @@ function StatsDashboard({
         <div className="section-title"><LineChart size={18} /><h3>Estatisticas gerais</h3></div>
         <StatsMetricGrid scope={allTimeScope} />
         <ProfitChart points={allTimeTimeline} />
-      </section>
-
-      <section className="panel giveaway-panel">
-        <div className="section-title spread">
-          <div><Trophy size={18} /><h3>Giveaway de {monthName}</h3></div>
-          <span>{eligibleViewers} elegiveis</span>
-        </div>
-        {giveawayLeader ? (
-          <div className="giveaway-leader">
-            <span className="giveaway-rank">1</span>
-            <Avatar user={giveawayLeader.user} />
-            <div>
-              <strong>{giveawayLeader.user.displayName}</strong>
-              <small>1. lugar por lucro fechado em {monthName}</small>
-            </div>
-            <b>{giveawayLeader.profit >= 0 ? "+" : ""}{giveawayLeader.profit.toFixed(2)}u</b>
-          </div>
-        ) : null}
-        <div className="giveaway-rules">
-          <span>Minimo <b>1 tip final resolvida</b></span>
-          <span>Desempate <b>ROI, depois winrate</b></span>
-          <span>Premio <b>Badge + giveaway em stream</b></span>
-        </div>
       </section>
 
       <StatsTable title={`Performance de ${monthName}`} scope={monthScope} />
@@ -2509,6 +2511,21 @@ function StatsMetricGrid({ scope, bankroll }: { scope: StatsScope; bankroll?: Re
 }
 
 function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
+  const rankedRows = runtimeUsers
+    .map((user) => ({
+      user,
+      row: scope.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
+        submitted: 0,
+        selected: 0,
+        settled: 0,
+        pendingSelected: 0,
+        staked: 0,
+        profit: 0,
+        roi: 0
+      }
+    }))
+    .sort((left, right) => right.row.profit - left.row.profit || right.row.settled - left.row.settled || right.row.selected - left.row.selected);
+
   return (
     <section className="panel stats-table-panel">
       <div className="section-title spread">
@@ -2517,28 +2534,17 @@ function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
       </div>
       <div className="stats-table">
         <div className="stats-table-head"><span>Pessoa</span><span>Tips</span><span>Finais</span><span>Resolvidas</span><span>Stake</span><span>Lucro</span><span>ROI</span></div>
-        {runtimeUsers.map((user) => {
-          const row = scope.byViewer.find((viewerRow) => viewerRow.userId === user.id) ?? {
-            submitted: 0,
-            selected: 0,
-            settled: 0,
-            pendingSelected: 0,
-            staked: 0,
-            profit: 0,
-            roi: 0
-          };
-          return (
-            <div className="stats-table-row" key={user.id}>
-              <span className="viewer-cell"><Avatar user={user} /> {user.displayName}</span>
-              <span>{row.submitted}</span>
-              <span>{row.selected}</span>
-              <span>{row.settled}</span>
-              <span>{row.staked.toFixed(2)}u</span>
-              <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
-              <span>{row.roi.toFixed(1)}%</span>
-            </div>
-          );
-        })}
+        {rankedRows.length > 0 ? rankedRows.map(({ user, row }) => (
+          <div className="stats-table-row" key={user.id}>
+            <span className="viewer-cell"><Avatar user={user} /> {user.displayName}</span>
+            <span>{row.submitted}</span>
+            <span>{row.selected}</span>
+            <span>{row.settled}</span>
+            <span>{row.staked.toFixed(2)}u</span>
+            <b className={row.profit < 0 ? "negative-value" : "positive-value"}>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+            <span className={row.roi < 0 ? "negative-value" : ""}>{row.roi.toFixed(1)}%</span>
+          </div>
+        )) : <div className="stats-empty-row">Ainda nao existem perfis reais nesta liga.</div>}
       </div>
     </section>
   );
@@ -2555,9 +2561,10 @@ function LeaderboardPanel({ title, leaderboard }: { title: string; leaderboard: 
             <Avatar user={row.user} />
             <strong>{row.user.displayName}</strong>
             <small>{row.picks} resolvidas - ROI {row.roi.toFixed(1)}%</small>
-            <b>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+            <b className={row.profit < 0 ? "negative-value" : "positive-value"}>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
           </div>
         ))}
+        {leaderboard.length === 0 ? <div className="stats-empty-row">Ainda nao existem perfis reais nesta liga.</div> : null}
       </div>
     </section>
   );
@@ -2594,7 +2601,7 @@ function StatsPage({
 
       <section className="panel giveaway-panel">
         <div className="section-title spread">
-          <div><Trophy size={18} /><h3>Giveaway do dia</h3></div>
+          <div><Trophy size={18} /><h3>Destaque do dia</h3></div>
           <span>{eligibleViewers} elegiveis</span>
         </div>
         {giveawayLeader ? (
@@ -2611,7 +2618,6 @@ function StatsPage({
         <div className="giveaway-rules">
           <span>Minimo <b>1 tip final resolvida</b></span>
           <span>Desempate <b>ROI, depois winrate</b></span>
-          <span>Premio <b>Badge + giveaway em stream</b></span>
         </div>
       </section>
 
