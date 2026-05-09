@@ -600,13 +600,6 @@ export function App() {
   const activeUser = remoteActiveProfile ?? authProfile ?? userById(activeUserId);
   const isStreamer = activeUser.role === "streamer";
   const scheduledMatches = useMemo(() => filterUpcomingScheduledMatches(keepApiFootballMatches(matches)), [matches]);
-  const scheduledMatchesByDay = useMemo(
-    () => matchDates.map((day) => ({
-      day,
-      count: scheduledMatches.filter((match) => getLocalDateKey(new Date(match.startsAt)) === day).length
-    })),
-    [scheduledMatches]
-  );
   const competitionOptions = useMemo(
     () => [
       "all",
@@ -1225,7 +1218,7 @@ export function App() {
                 <span className={`sync-chip ${matchSync}`}>
                   <RefreshCw size={15} />
                   {matchSync === "loading" ? "A sincronizar" : null}
-                  {matchSync === "live" ? `${visibleMatches.length}/${scheduledMatches.length} jogos · ${scheduledMatchesByDay.map((item) => item.count).join("+")}` : null}
+                  {matchSync === "live" ? `${visibleMatches.length}/${scheduledMatches.length} jogos` : null}
                   {matchSync === "empty" ? "Sem jogos reais hoje" : null}
                 </span>
                 {isStreamer ? (
