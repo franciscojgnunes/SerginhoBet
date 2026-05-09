@@ -63,8 +63,46 @@ function normalizeHalfFull(value) {
   return parts.length === 2 ? `${parts[0]}/${parts[1]}` : normalizeSelection(text);
 }
 
+function normalizeBetName(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMainTotalGoalsMarket(name) {
+  return [
+    "goals over/under",
+    "goal line",
+    "total goals",
+    "total",
+    "over/under",
+    "over under"
+  ].includes(name);
+}
+
+function isMainCornersMarket(name) {
+  return [
+    "corners over under",
+    "corners over/under",
+    "total corners",
+    "corners total"
+  ].includes(name);
+}
+
+function isMainCardsMarket(name) {
+  return [
+    "cards over under",
+    "cards over/under",
+    "total cards",
+    "booking points over under",
+    "booking points over/under"
+  ].includes(name);
+}
+
 function mapBetToMarket(betName, rawValue) {
-  const name = String(betName ?? "").toLowerCase();
+  const name = normalizeBetName(betName);
 
   if (name === "match winner" || name === "1x2" || name === "fulltime result") {
     return { marketType: "1X2", selection: normalizeSelection(rawValue) };
@@ -75,13 +113,13 @@ function mapBetToMarket(betName, rawValue) {
   if (name.includes("both teams") || name.includes("btts")) {
     return { marketType: "Ambas marcam", selection: normalizeBothTeamsScore(rawValue) };
   }
-  if (name.includes("over/under") || name.includes("over under") || name.includes("total goals") || name === "goals over/under") {
+  if (isMainTotalGoalsMarket(name)) {
     return { marketType: "Over/Under", selection: normalizeOverUnder(rawValue) };
   }
-  if (name.includes("corners")) {
+  if (isMainCornersMarket(name)) {
     return { marketType: "Cantos", selection: normalizeOverUnder(rawValue, "cantos") };
   }
-  if (name.includes("cards") || name.includes("booking")) {
+  if (isMainCardsMarket(name)) {
     return { marketType: "Cartoes", selection: normalizeOverUnder(rawValue, "cartoes") };
   }
   if (name.includes("correct score") || name.includes("exact score")) {
