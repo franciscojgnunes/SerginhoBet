@@ -42,12 +42,14 @@ const tomorrowDay = getLocalDateKey(tomorrowDate);
 const communityInitialBankroll = 100;
 const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchDates = [tipDay, tomorrowDay];
-const matchesCacheKey = `pickroom:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v4" : "api-football-server-v4"}`;
-const picksCacheKey = `pickroom:picks:${tipDay}`;
-const votesCacheKey = `pickroom:votes:${tipDay}`;
-const oddsCacheKey = `pickroom:odds:${tipDay}:${tomorrowDay}:average-markets-v3`;
-const slipCacheKey = `pickroom:slip:${tipDay}`;
-const slipHistoryCacheKey = `pickroom:slip-history:${tipDay}`;
+const cacheNamespace = "serginhobet:clean-20260509";
+const statsResetAt = "2026-05-09T11:20:00.000Z";
+const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v4" : "api-football-server-v4"}`;
+const picksCacheKey = `${cacheNamespace}:picks:${tipDay}`;
+const votesCacheKey = `${cacheNamespace}:votes:${tipDay}`;
+const oddsCacheKey = `${cacheNamespace}:odds:${tipDay}:${tomorrowDay}:average-markets-v3`;
+const slipCacheKey = `${cacheNamespace}:slip:${tipDay}`;
+const slipHistoryCacheKey = `${cacheNamespace}:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
 const fallbackUser: User = { id: "unknown-user", displayName: "Utilizador", role: "viewer", avatarColor: "#16d782" };
 
@@ -137,6 +139,35 @@ function writeStoredValue<T>(key: string, value: T) {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Local cache is a convenience; the app keeps working if storage is blocked.
+  }
+}
+
+function isAfterStatsReset(value?: string) {
+  if (!value) return false;
+  return new Date(value).getTime() >= new Date(statsResetAt).getTime();
+}
+
+function clearLegacyStatsCache() {
+  try {
+    const clearMarker = `${cacheNamespace}:legacy-cleared`;
+    if (localStorage.getItem(clearMarker)) return;
+    const legacyPrefixes = [
+      "pickroom:picks:",
+      "pickroom:votes:",
+      "pickroom:slip:",
+      "pickroom:slip-history:",
+      "pickroom:published-popup:",
+      "pickroom:kickoff-popup:"
+    ];
+    const keysToRemove: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key && legacyPrefixes.some((prefix) => key.startsWith(prefix))) keysToRemove.push(key);
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+    localStorage.setItem(clearMarker, "true");
+  } catch {
+    // Old browser cache should never block the app.
   }
 }
 
@@ -366,6 +397,7 @@ function TeamLogo({ src, name }: { src?: string; name: string }) {
 }
 
 export function App() {
+  clearLegacyStatsCache();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeUserId, setActiveUserId] = useState("u-serginho");
   const [authProfile, setAuthProfile] = useState<User | null>(null);
@@ -521,16 +553,16 @@ export function App() {
           });
           setMatchSync("live");
         }
-        setPicks(remote.picks);
+        setPicks(remote.picks.filter((pick) => isAfterStatsReset(pick.createdAt)));
         setVotes(remote.votes);
         if (remote.odds.length > 0) setMatchOdds(remote.odds);
-        if (remote.dailySlip) {
+        if (remote.dailySlip && isAfterStatsReset(remote.dailySlip.generatedAt)) {
           setDailySlip((current) => {
             const hasLocalDraft = current.status === "draft" && current.pickIds.length > 0 && current.generatedAt !== remote.dailySlip?.generatedAt;
             return hasLocalDraft ? current : remote.dailySlip!;
           });
         }
-        setSlipHistory(remote.slipHistory);
+        setSlipHistory(remote.slipHistory.filter((slip) => isAfterStatsReset(slip.publishedAt)));
         setSyncStatus("ready");
       } catch (error) {
         console.error("Failed to load Supabase state", error);
@@ -697,8 +729,8 @@ export function App() {
     : { ...baseBankroll, exposure: slipExposure };
   const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
   const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
-  const allStoredPicks = useMemo(() => mergeById([...readStoredCollections<Pick>("pickroom:picks:"), ...picks]), [picks]);
-  const allStoredSlips = useMemo(() => mergeById([...readStoredCollections<SlipHistoryItem>("pickroom:slip-history:"), ...slipHistory]), [slipHistory]);
+  const allStoredPicks = useMemo(() => mergeById([...readStoredCollections<Pick>(`${cacheNamespace}:picks:`), ...picks]), [picks]);
+  const allStoredSlips = useMemo(() => mergeById([...readStoredCollections<SlipHistoryItem>(`${cacheNamespace}:slip-history:`), ...slipHistory]), [slipHistory]);
   const monthKey = tipDay.slice(0, 7);
   const monthName = new Intl.DateTimeFormat("pt-PT", { month: "long" }).format(currentDate).replace(/^./, (letter) => letter.toUpperCase());
   const dayScope = useMemo(
