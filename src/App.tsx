@@ -2117,12 +2117,10 @@ function TipForm({
             disabled={hasApiOdds}
             onChange={(event) => onChange((state) => ({ ...state, odds: event.target.value, bookmaker: "Manual" }))}
           />
-          <span className="field-note">{selectedOdd ? `Odd bloqueada via ${selectedOdd.bookmaker}` : "Sem odds API: escreve a pick e a odd manualmente."}</span>
         </label>
         <label>
           Stake sugerida
           <input type="number" step="0.5" min="0.5" value={formState.stake} onChange={(event) => onChange((state) => ({ ...state, stake: event.target.value }))} />
-          <span className="field-note">Nao altera a stake da combinada coletiva.</span>
         </label>
         <label className="reason-field">
           Argumento opcional
