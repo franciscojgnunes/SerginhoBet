@@ -1614,17 +1614,18 @@ h1 {
   color: var(--lime);
 }
 
-.final-odd-field {
+.settlement-odd-field {
   color: var(--muted);
   display: grid;
   font-size: 0.68rem;
   font-weight: 900;
   gap: 4px;
+  margin-top: 8px;
   text-transform: uppercase;
-  width: 88px;
+  width: 108px;
 }
 
-.final-odd-field input {
+.settlement-odd-field input {
   background: #07150e;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1636,7 +1637,7 @@ h1 {
   width: 100%;
 }
 
-.final-odd-field input:focus {
+.settlement-odd-field input:focus {
   border-color: var(--lime);
   box-shadow: 0 0 0 3px rgba(183, 255, 52, 0.12);
 }
@@ -3367,7 +3368,7 @@ h1 {
     padding: 9px;
   }
 
-  .final-odd-field {
+  .settlement-odd-field {
     width: 100%;
   }
 

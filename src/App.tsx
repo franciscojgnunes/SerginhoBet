@@ -566,6 +566,38 @@ function normalizePickStake(pick: Pick): Pick {
   return pick.stake === fixedViewerStake ? pick : { ...pick, stake: fixedViewerStake };
 }
 
+function isEquivalentSlipPick(left: Pick, right: Pick) {
+  return left.matchId === right.matchId
+    && left.marketType === right.marketType
+    && normalizeFilterText(left.selection) === normalizeFilterText(right.selection);
+}
+
+function getSlipPicks(slip: SlipHistoryItem, sourcePicks: Pick[]) {
+  return slip.pickIds
+    .map((pickId) => sourcePicks.find((pick) => pick.id === pickId))
+    .filter((pick): pick is Pick => Boolean(pick));
+}
+
+function recalculateSlip(slip: SlipHistoryItem, sourcePicks: Pick[], votes: VoteRecord[]) {
+  const slipPicks = getSlipPicks(slip, sourcePicks);
+  if (slip.mode === "combined") {
+    const odds = buildPickGroups(slipPicks, votes).reduce((total, group) => total * group.representative.odds, 1);
+    const profit = slip.settlementStatus === "pending" ? 0 : calculateProfit(slip.settlementStatus, slip.combinedStake, odds);
+    return { slip: { ...slip, profit }, picks: slipPicks };
+  }
+
+  const recalculatedPicks = slipPicks.map((pick) => ({
+    ...pick,
+    stake: fixedViewerStake,
+    profit: calculateProfit(pick.status, slip.multiplesStake, pick.odds)
+  }));
+  const profit = roundUnits(recalculatedPicks.reduce((total, pick) => total + pick.profit, 0));
+  const settlementStatus: PickStatus = recalculatedPicks.some((pick) => pick.status === "pending")
+    ? "pending"
+    : profit > 0 ? "won" : profit < 0 ? "lost" : "void";
+  return { slip: { ...slip, settlementStatus, profit }, picks: recalculatedPicks };
+}
+
 export function App() {
   clearLegacyStatsCache();
   const [isOverlayRoute] = useState(() => window.location.pathname === "/overlay" || window.location.hash === "#overlay");
@@ -1299,22 +1331,47 @@ export function App() {
     setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, multiplesStake: value, generatedAt: new Date().toISOString() }));
   }
 
-  function updateFinalGroupOdds(group: PickGroup, value: number) {
+  function updateSlipPickOdds(slipId: string, pickId: string, value: number) {
     if (!Number.isFinite(value) || value <= 1) return;
-    const groupIds = new Set(group.picks.map((pick) => pick.id));
-    setPicks((current) => current.map((pick) => groupIds.has(pick.id) ? { ...pick, odds: value, bookmaker: "Ajustado pelo streamer" } : pick));
-    setDailySlip((slip) => ({
-      ...slip,
-      settlementStatus: "pending",
-      profit: 0,
-      generatedAt: slip.status === "published" ? slip.generatedAt : new Date().toISOString()
-    }));
+    const slip = slipHistory.find((item) => item.id === slipId);
+    const basePick = picks.find((pick) => pick.id === pickId);
+    if (!slip || !basePick) return;
+
+    const affectedIds = new Set(
+      slip.pickIds.filter((id) => {
+        const pick = picks.find((item) => item.id === id);
+        return pick ? isEquivalentSlipPick(pick, basePick) : false;
+      })
+    );
+    if (affectedIds.size === 0) return;
+
+    let recalculatedSlip: SlipHistoryItem | null = null;
+    let recalculatedSlipPicks: Pick[] = [];
+    const nextPicks = picks.map((pick) =>
+      affectedIds.has(pick.id)
+        ? { ...pick, odds: value, bookmaker: "Ajustado pelo streamer" }
+        : pick
+    );
+    const recalculated = recalculateSlip(slip, nextPicks, votes);
+    recalculatedSlip = recalculated.slip;
+    recalculatedSlipPicks = recalculated.picks;
+    const recalculatedPickMap = new Map(recalculatedSlipPicks.map((pick) => [pick.id, pick]));
+    const nextPicksWithProfit = nextPicks.map((pick) => recalculatedPickMap.get(pick.id) ?? pick);
+
+    setPicks(nextPicksWithProfit);
+    setSlipHistory((current) => current.map((item) => (item.id === slipId && recalculatedSlip ? recalculatedSlip : item)));
+    if (slip.generatedAt === dailySlip.generatedAt && recalculatedSlip) {
+      setDailySlip((current) => ({ ...current, settlementStatus: recalculatedSlip!.settlementStatus, profit: recalculatedSlip!.profit }));
+    }
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
-      void Promise.all(group.picks.map((pick) => updatePickOdds(pick.id, value)))
+      void Promise.all([
+        ...Array.from(affectedIds).map((id) => updatePickOdds(id, value)),
+        recalculatedSlip ? saveSettlement(recalculatedSlip, recalculatedSlipPicks) : Promise.resolve()
+      ])
         .then(() => setSyncStatus("ready"))
         .catch((error) => {
-          console.error("Failed to update final odds", error);
+          console.error("Failed to update slip odds", error);
           setSyncStatus("error");
         });
     }
@@ -1328,21 +1385,16 @@ export function App() {
       const finalStake = slip.mode === "multiples" && slip.pickIds.includes(pickId) ? slip.multiplesStake : fixedViewerStake;
       return { ...pick, stake: fixedViewerStake, status, profit: calculateProfit(status, finalStake, pick.odds) };
     });
-    const slipPicks = slip.pickIds
-      .map((id) => nextPicks.find((pick) => pick.id === id))
-      .filter((pick): pick is Pick => Boolean(pick));
-    const profit = roundUnits(slipPicks.reduce((total, pick) => total + pick.profit, 0));
-    const settlementStatus: PickStatus = slipPicks.some((pick) => pick.status === "pending")
-      ? "pending"
-      : profit > 0 ? "won" : profit < 0 ? "lost" : "void";
-    const nextSlip = { ...slip, settlementStatus, profit };
+    const { slip: nextSlip, picks: slipPicks } = recalculateSlip(slip, nextPicks, votes);
+    const recalculatedPickMap = new Map(slipPicks.map((pick) => [pick.id, pick]));
+    const nextPicksWithProfit = nextPicks.map((pick) => recalculatedPickMap.get(pick.id) ?? pick);
 
-    setPicks(nextPicks);
+    setPicks(nextPicksWithProfit);
     setSlipHistory((current) =>
       current.map((item) => (item.id === slipId ? nextSlip : item))
     );
     if (slip.generatedAt === dailySlip.generatedAt) {
-      setDailySlip((current) => ({ ...current, settlementStatus, profit }));
+      setDailySlip((current) => ({ ...current, settlementStatus: nextSlip.settlementStatus, profit: nextSlip.profit }));
     }
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
@@ -1358,17 +1410,13 @@ export function App() {
   function settleCombinedSlip(slipId: string, status: PickStatus) {
     const slip = slipHistory.find((item) => item.id === slipId);
     if (!slip) return;
-    const slipPicks = slip.pickIds
-      .map((pickId) => picks.find((pick) => pick.id === pickId))
-      .filter((pick): pick is Pick => Boolean(pick));
-    const odds = buildPickGroups(slipPicks, votes).reduce((total, group) => total * group.representative.odds, 1);
-    const profit = calculateProfit(status, slip.combinedStake, odds);
-    const nextSlip = { ...slip, settlementStatus: status, profit };
+    const slipWithStatus = { ...slip, settlementStatus: status };
+    const { slip: nextSlip, picks: slipPicks } = recalculateSlip(slipWithStatus, picks, votes);
     setSlipHistory((current) =>
       current.map((item) => (item.id === slipId ? nextSlip : item))
     );
     if (slip.generatedAt === dailySlip.generatedAt) {
-      setDailySlip((current) => ({ ...current, settlementStatus: status, profit }));
+      setDailySlip((current) => ({ ...current, settlementStatus: nextSlip.settlementStatus, profit: nextSlip.profit }));
     }
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
@@ -1800,16 +1848,6 @@ export function App() {
                           <strong>{pick.selection}</strong>
                           <small>{group.authors.map((author) => author.displayName).join(", ")} · {match?.homeTeam} vs {match?.awayTeam} · Score {group.score}</small>
                         </div>
-                        <label className="final-odd-field">
-                          Odd
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="1.01"
-                            value={pick.odds}
-                            onChange={(event) => updateFinalGroupOdds(group, Number(event.target.value))}
-                          />
-                        </label>
                         <button onClick={() => toggleFinalPickGroup(group)}>Remover</button>
                       </div>
                     );
@@ -1859,6 +1897,7 @@ export function App() {
           combinedOdds={selectedResolveCombinedOdds}
           selectedSlipId={selectedResolveSlipId}
           onSelectSlip={setSelectedResolveSlipId}
+          onUpdateOdd={updateSlipPickOdds}
           onSettlePick={(slipId, pickId, status) => setPendingSettlement({ kind: "pick", slipId, pickId, status })}
           onSettleCombined={(slipId, status) => setPendingSettlement({ kind: "combined", slipId, status })}
         />
@@ -1872,6 +1911,7 @@ export function App() {
           matches={matches}
           slipHistory={slipHistory}
           votes={votes}
+          onUpdateOdd={isStreamer ? updateSlipPickOdds : undefined}
         />
       ) : null}
 
@@ -2383,7 +2423,8 @@ function HistoryPage({
   allPicks,
   matches,
   slipHistory,
-  votes
+  votes,
+  onUpdateOdd
 }: {
   user: User;
   isStreamer: boolean;
@@ -2391,6 +2432,7 @@ function HistoryPage({
   matches: Match[];
   slipHistory: SlipHistoryItem[];
   votes: VoteRecord[];
+  onUpdateOdd?: (slipId: string, pickId: string, odds: number) => void;
 }) {
   const [expandedSlipIds, setExpandedSlipIds] = useState<Set<string>>(() => new Set());
   const visiblePicks = isStreamer ? allPicks : allPicks.filter((pick) => pick.userId === user.id);
@@ -2423,6 +2465,18 @@ function HistoryPage({
               <div>
                 <strong>{pick.selection}</strong>
                 <small>{author.displayName} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
+                {isStreamer && onUpdateOdd ? (
+                  <label className="settlement-odd-field">
+                    Odd final
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1.01"
+                      value={pick.odds}
+                      onChange={(event) => onUpdateOdd(slip.id, pick.id, Number(event.target.value))}
+                    />
+                  </label>
+                ) : null}
               </div>
               <MatchMiniCard match={match} />
             </div>
@@ -2727,6 +2781,7 @@ function ResolvePage({
   combinedOdds,
   selectedSlipId,
   onSelectSlip,
+  onUpdateOdd,
   onSettlePick,
   onSettleCombined
 }: {
@@ -2737,6 +2792,7 @@ function ResolvePage({
   combinedOdds: number;
   selectedSlipId: string;
   onSelectSlip: (slipId: string) => void;
+  onUpdateOdd: (slipId: string, pickId: string, odds: number) => void;
   onSettlePick: (slipId: string, pickId: string, status: PickStatus) => void;
   onSettleCombined: (slipId: string, status: PickStatus) => void;
 }) {
@@ -2806,6 +2862,16 @@ function ResolvePage({
                     <div>
                       <strong>{pick.selection}</strong>
                       <small>{author.displayName} - @{pick.odds.toFixed(2)}</small>
+                      <label className="settlement-odd-field">
+                        Odd final
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="1.01"
+                          value={pick.odds}
+                          onChange={(event) => onUpdateOdd(selectedSlip.id, pick.id, Number(event.target.value))}
+                        />
+                      </label>
                     </div>
                     <MatchMiniCard match={match} />
                   </div>
@@ -2854,6 +2920,16 @@ function ResolvePage({
                 <div>
                   <strong>{pick.selection}</strong>
                   <small>{pick.marketType} - @{pick.odds.toFixed(2)} - {selectedSlip.multiplesStake}u</small>
+                  <label className="settlement-odd-field">
+                    Odd final
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1.01"
+                      value={pick.odds}
+                      onChange={(event) => onUpdateOdd(selectedSlip.id, pick.id, Number(event.target.value))}
+                    />
+                  </label>
                 </div>
                 <div className={`status ${pick.status}`}>{statusLabel(pick.status)}</div>
                 <select value={pick.status} onChange={(event) => onSettlePick(selectedSlip.id, pick.id, event.target.value as PickStatus)}>
