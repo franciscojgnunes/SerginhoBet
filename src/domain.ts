@@ -103,6 +103,7 @@ const competitionNameMap: Record<string, string> = {
   "UEFA Champions League": "Champions League",
   "USL Championship": "USL Championship",
   "FIFA World Cup": "World Cup",
+  "Mundial": "World Cup",
   "World Cup": "World Cup",
   "arg.1": "Argentina Liga Profesional",
   "arg.2": "Argentina 2ª Liga",

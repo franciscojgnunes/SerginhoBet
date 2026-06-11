@@ -222,6 +222,7 @@ describe("PickRoom domain logic", () => {
     expect(cleanCompetitionName("conmebol.libertadores")).toBe("Copa Libertadores");
     expect(cleanCompetitionName("World Cup")).toBe("World Cup");
     expect(cleanCompetitionName("FIFA World Cup")).toBe("World Cup");
+    expect(cleanCompetitionName("Mundial")).toBe("World Cup");
   });
 
   it("calculates daily totals and per-viewer stats for streamer decisions", () => {

@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { cleanCompetitionName } from "./domain";
 import type { DailySlip, League, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote } from "./types";
 
 type ProfileRow = {
@@ -119,7 +120,7 @@ function mapLeague(row: LeagueRow): League {
 function mapMatch(row: MatchRow): Match {
   return {
     id: row.id,
-    competition: row.competition,
+    competition: cleanCompetitionName(row.competition),
     country: row.country ?? undefined,
     homeTeam: row.home_team,
     awayTeam: row.away_team,

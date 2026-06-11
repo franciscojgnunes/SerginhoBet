@@ -44,7 +44,7 @@ const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchDates = [tipDay, tomorrowDay];
 const cacheNamespace = "serginhobet:clean-20260509";
 const statsResetAt = "2026-05-09T11:20:00.000Z";
-const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v8-worldcup" : "api-football-server-v8-worldcup"}`;
+const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v9-worldcup" : "api-football-server-v9-worldcup"}`;
 const picksCacheKey = `${cacheNamespace}:picks:${tipDay}`;
 const votesCacheKey = `${cacheNamespace}:votes:${tipDay}`;
 const oddsCacheKey = `${cacheNamespace}:odds:${tipDay}:${tomorrowDay}:average-markets-v3`;
@@ -195,7 +195,10 @@ function isApiFootballMatch(match: Match) {
 }
 
 function keepApiFootballMatches(matches: Match[]) {
-  return matches.filter(isApiFootballMatch);
+  return matches.filter(isApiFootballMatch).map((match) => ({
+    ...match,
+    competition: match.competition === "Mundial" ? "World Cup" : match.competition
+  }));
 }
 
 function hasExpandedOdds(odds: MatchOdd[]) {
@@ -219,7 +222,7 @@ function hasMatchCoverage(matches: Match[], days: string[]) {
     const day = getLocalDateKey(new Date(match.startsAt));
     return day === tomorrowDay && competitionRank(key) < 999;
   });
-  const hasWorldCupCoverage = days.every((day) => (worldCupMatchesByDay.get(day) ?? 0) > 0);
+  const hasWorldCupCoverage = days.every((day) => (worldCupMatchesByDay.get(day) ?? 0) >= 2);
   return hasEnoughPerDay && hasFeaturedTomorrow && hasWorldCupCoverage;
 }
 
