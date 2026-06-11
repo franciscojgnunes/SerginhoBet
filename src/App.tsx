@@ -44,7 +44,7 @@ const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchDates = [tipDay, tomorrowDay];
 const cacheNamespace = "serginhobet:clean-20260509";
 const statsResetAt = "2026-05-09T11:20:00.000Z";
-const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v7-worldcup" : "api-football-server-v7-worldcup"}`;
+const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v8-worldcup" : "api-football-server-v8-worldcup"}`;
 const picksCacheKey = `${cacheNamespace}:picks:${tipDay}`;
 const votesCacheKey = `${cacheNamespace}:votes:${tipDay}`;
 const oddsCacheKey = `${cacheNamespace}:odds:${tipDay}:${tomorrowDay}:average-markets-v3`;
@@ -205,9 +205,13 @@ function hasExpandedOdds(odds: MatchOdd[]) {
 function hasMatchCoverage(matches: Match[], days: string[]) {
   const scheduled = filterUpcomingScheduledMatches(keepApiFootballMatches(matches));
   const matchesByDay = new Map<string, number>();
+  const worldCupMatchesByDay = new Map<string, number>();
   for (const match of scheduled) {
     const day = getLocalDateKey(new Date(match.startsAt));
     matchesByDay.set(day, (matchesByDay.get(day) ?? 0) + 1);
+    if (competitionFilterKey(match) === "World|World Cup") {
+      worldCupMatchesByDay.set(day, (worldCupMatchesByDay.get(day) ?? 0) + 1);
+    }
   }
   const hasEnoughPerDay = days.every((day) => (matchesByDay.get(day) ?? 0) >= 20);
   const hasFeaturedTomorrow = scheduled.some((match) => {
@@ -215,7 +219,8 @@ function hasMatchCoverage(matches: Match[], days: string[]) {
     const day = getLocalDateKey(new Date(match.startsAt));
     return day === tomorrowDay && competitionRank(key) < 999;
   });
-  return hasEnoughPerDay && hasFeaturedTomorrow;
+  const hasWorldCupCoverage = days.every((day) => (worldCupMatchesByDay.get(day) ?? 0) > 0);
+  return hasEnoughPerDay && hasFeaturedTomorrow && hasWorldCupCoverage;
 }
 
 function competitionFilterKey(match: Match) {
@@ -548,11 +553,12 @@ export function App() {
         }
         const remoteApiMatches = keepApiFootballMatches(remote.matches);
         if (remoteApiMatches.length > 0) {
+          const mergedRemoteMatches = keepApiFootballMatches(mergeById([...matches, ...remoteApiMatches]));
           setMatches((current) => keepApiFootballMatches(mergeById([...current, ...remoteApiMatches])));
           setSelectedMatchId((current) => {
-            const mergedMatches = keepApiFootballMatches(mergeById([...matches, ...remoteApiMatches]));
-            return mergedMatches.some((match) => match.id === current) ? current : filterUpcomingScheduledMatches(mergedMatches)[0]?.id ?? "";
+            return mergedRemoteMatches.some((match) => match.id === current) ? current : filterUpcomingScheduledMatches(mergedRemoteMatches)[0]?.id ?? "";
           });
+          if (!hasMatchCoverage(mergedRemoteMatches, matchDates)) void syncTodayMatches(true);
           setMatchSync("live");
         }
         setPicks(remote.picks.filter((pick) => isAfterStatsReset(pick.createdAt)));
