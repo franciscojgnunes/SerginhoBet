@@ -48,7 +48,7 @@ const statsResetAt = "2026-05-09T11:20:00.000Z";
 const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v9-worldcup" : "api-football-server-v9-worldcup"}`;
 const picksCacheKey = `${cacheNamespace}:picks:${tipDay}`;
 const votesCacheKey = `${cacheNamespace}:votes:${tipDay}`;
-const oddsCacheKey = `${cacheNamespace}:odds:${tipDay}:${tomorrowDay}:average-markets-v4-espn-worldcup`;
+const oddsCacheKey = `${cacheNamespace}:odds:${tipDay}:${tomorrowDay}:average-markets-v5-filtered-espn-worldcup`;
 const slipCacheKey = `${cacheNamespace}:slip:${tipDay}`;
 const slipHistoryCacheKey = `${cacheNamespace}:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
@@ -99,6 +99,56 @@ const defaultSelectionsByMarket: Partial<Record<MarketType, string[]>> = {
   Cartoes: ["Mais de 3.5 cartões", "Mais de 4.5 cartões", "Mais de 5.5 cartões", "Menos de 4.5 cartões", "Menos de 5.5 cartões"],
   Cantos: ["Mais de 8.5 cantos", "Mais de 9.5 cantos", "Mais de 10.5 cantos", "Menos de 9.5 cantos", "Menos de 10.5 cantos"]
 };
+
+const strictOddsSelectionsByMarket: Partial<Record<MarketType, Set<string>>> = {
+  "1X2": new Set(["Casa vence", "Empate", "Fora vence"]),
+  "Dupla chance": new Set(["Casa ou empate", "Casa ou fora", "Empate ou fora"]),
+  "Ambas marcam": new Set(["Ambas marcam: Sim", "Ambas marcam: Nao", "Ambas marcam: N\u00e3o"]),
+  Intervalo: new Set(["Casa vence", "Empate", "Fora vence"])
+};
+
+const oddsSelectionOrderByMarket: Partial<Record<MarketType, string[]>> = {
+  "1X2": ["Casa vence", "Empate", "Fora vence"],
+  "Dupla chance": ["Casa ou empate", "Casa ou fora", "Empate ou fora"],
+  "Ambas marcam": ["Ambas marcam: Sim", "Ambas marcam: Nao", "Ambas marcam: N\u00e3o"],
+  Intervalo: ["Casa vence", "Empate", "Fora vence"]
+};
+
+function isOddsSelectionAllowed(marketType: MarketType, selection: string) {
+  const strictSelections = strictOddsSelectionsByMarket[marketType];
+  if (strictSelections) return strictSelections.has(selection);
+  if (marketType === "Handicap") return /^(Casa|Fora) [+-]\d+(?:\.\d+)?$/.test(selection);
+  if (marketType === "Over/Under") return /^(Mais|Menos) de \d+(?:\.\d+)? golos$/.test(selection);
+  if (marketType === "Golos ao intervalo") return /^(Mais|Menos) de \d+(?:\.\d+)? golos ao intervalo$/.test(selection);
+  if (marketType === "Resultado correto") return /^\d+-\d+$/.test(selection);
+  if (marketType === "Intervalo/Final") return /^(Casa|Empate|Fora)\/(Casa|Empate|Fora)$/.test(selection);
+  return true;
+}
+
+function compareOddsSelection(marketType: MarketType, left: MatchOdd, right: MatchOdd) {
+  const order = oddsSelectionOrderByMarket[marketType];
+  if (order) {
+    const leftIndex = order.indexOf(left.selection);
+    const rightIndex = order.indexOf(right.selection);
+    if (leftIndex !== rightIndex) return (leftIndex === -1 ? 999 : leftIndex) - (rightIndex === -1 ? 999 : rightIndex);
+  }
+  return left.selection.localeCompare(right.selection, "pt");
+}
+
+function getAvailableOddsForMarket(matchOdds: MatchOdd[] | undefined, marketType: MarketType) {
+  const uniqueOdds = new Map<string, MatchOdd>();
+  for (const odd of matchOdds ?? []) {
+    if (odd.marketType !== marketType) continue;
+    if (!isOddsSelectionAllowed(marketType, odd.selection)) continue;
+    const existing = uniqueOdds.get(odd.selection);
+    if (!existing || odd.odds > existing.odds) uniqueOdds.set(odd.selection, odd);
+  }
+  return Array.from(uniqueOdds.values()).sort((left, right) => compareOddsSelection(marketType, left, right));
+}
+
+function findAvailableOdd(matchOdds: MatchOdd[] | undefined, marketType: MarketType, selection: string) {
+  return getAvailableOddsForMarket(matchOdds, marketType).find((odd) => odd.selection === selection);
+}
 
 type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile";
 type StatsScope = ReturnType<typeof buildStatsScope>;
@@ -909,9 +959,8 @@ export function App() {
     const stake = Number(formState.stake);
     const manualOdds = Number(formState.odds);
     const targetMatch = tipModalMatch ?? selectedMatch;
-    const apiOdd = targetMatch
-      ? matchOdds.find((odd) => odd.matchId === targetMatch.id && odd.marketType === formState.marketType && odd.selection === formState.selection)
-      : undefined;
+    const matchSpecificOdds = targetMatch ? matchOdds.filter((odd) => odd.matchId === targetMatch.id) : [];
+    const apiOdd = findAvailableOdd(matchSpecificOdds, formState.marketType, formState.selection);
     const finalOdds = apiOdd?.odds ?? manualOdds;
     const bookmaker = apiOdd?.bookmaker ?? (formState.bookmaker.trim() || "Manual");
     if (!targetMatch || !formState.selection.trim() || finalOdds <= 1 || stake <= 0) return;
@@ -2126,9 +2175,9 @@ function TipForm({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onChange: React.Dispatch<React.SetStateAction<{ marketType: MarketType; selection: string; odds: string; stake: string; bookmaker: string; reason: string }>>;
 }) {
-  const availableOdds = (matchOdds ?? []).filter((odd) => odd.marketType === formState.marketType);
+  const availableOdds = getAvailableOddsForMarket(matchOdds, formState.marketType);
   const selectionOptions = availableOdds.map((odd) => odd.selection);
-  const selectedOdd = availableOdds.find((odd) => odd.selection === formState.selection);
+  const selectedOdd = findAvailableOdd(availableOdds, formState.marketType, formState.selection);
   const hasApiOdds = selectionOptions.length > 0;
   const canSubmit = Boolean(
     selectedMatch
@@ -2155,7 +2204,7 @@ function TipForm({
             <select
               value={formState.selection}
               onChange={(event) => {
-                const nextOdd = availableOdds.find((odd) => odd.selection === event.target.value);
+                const nextOdd = findAvailableOdd(availableOdds, formState.marketType, event.target.value);
                 onChange((state) => ({
                   ...state,
                   selection: event.target.value,
@@ -2166,7 +2215,7 @@ function TipForm({
             >
               <option value="">Escolhe a pick</option>
               {selectionOptions.map((selection) => {
-                const odd = availableOdds.find((item) => item.selection === selection);
+                const odd = findAvailableOdd(availableOdds, formState.marketType, selection);
                 return (
                 <option value={selection} key={selection}>
                   {odd ? `${selection} @${odd.odds.toFixed(2)}` : selection}
