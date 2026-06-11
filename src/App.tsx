@@ -34,7 +34,7 @@ import {
 import { fetchMatchesForDates } from "./sportsApi";
 import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updateProfileAvatar } from "./supabaseData";
+import { ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickStake, updateProfileAvatar } from "./supabaseData";
 import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -539,6 +539,27 @@ function TeamLogo({ src, name }: { src?: string; name: string }) {
   return <span className="team-logo fallback">{name.slice(0, 2).toUpperCase()}</span>;
 }
 
+function MatchMiniCard({ match }: { match?: Match }) {
+  if (!match) return <span className="match-mini unavailable">Jogo indisponivel</span>;
+  return (
+    <div className="match-mini">
+      <div>
+        <TeamLogo src={match.homeLogoUrl} name={match.homeTeam} />
+        <strong>{match.homeTeam}</strong>
+      </div>
+      <span>vs</span>
+      <div>
+        <TeamLogo src={match.awayLogoUrl} name={match.awayTeam} />
+        <strong>{match.awayTeam}</strong>
+      </div>
+    </div>
+  );
+}
+
+function normalizePickStake(pick: Pick): Pick {
+  return pick.stake === fixedViewerStake ? pick : { ...pick, stake: fixedViewerStake };
+}
+
 export function App() {
   clearLegacyStatsCache();
   const [isOverlayRoute] = useState(() => window.location.pathname === "/overlay" || window.location.hash === "#overlay");
@@ -557,7 +578,7 @@ export function App() {
   const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty">(() => (
     readStoredValue<Match[]>(matchesCacheKey, []).length > 0 ? "live" : "loading"
   ));
-  const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []));
+  const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []).map(normalizePickStake));
   const [votes, setVotes] = useState<VoteRecord[]>(() => readStoredValue<VoteRecord[]>(votesCacheKey, []));
   const [matchOdds, setMatchOdds] = useState<MatchOdd[]>(() => readStoredValue<MatchOdd[]>(oddsCacheKey, []));
   const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
@@ -699,7 +720,14 @@ export function App() {
           requestAutomaticMatchRefresh(mergedRemoteMatches);
           setMatchSync("live");
         }
-        setPicks(remote.picks.filter((pick) => isAfterStatsReset(pick.createdAt)));
+        const resetPicks = remote.picks.filter((pick) => isAfterStatsReset(pick.createdAt));
+        const oldStakePicks = resetPicks.filter((pick) => pick.stake !== fixedViewerStake);
+        setPicks(resetPicks.map(normalizePickStake));
+        if (oldStakePicks.length > 0) {
+          void Promise.all(oldStakePicks.map((pick) => updatePickStake(pick.id, fixedViewerStake))).catch((error) => {
+            console.error("Failed to normalize old pick stakes", error);
+          });
+        }
         setVotes(remote.votes);
         if (remote.odds.length > 0) setMatchOdds(remote.odds);
         if (remote.dailySlip && isAfterStatsReset(remote.dailySlip.generatedAt)) {
@@ -910,7 +938,10 @@ export function App() {
     : { ...baseBankroll, exposure: slipExposure };
   const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
   const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
-  const allStoredPicks = useMemo(() => mergeById([...readStoredCollections<Pick>(`${cacheNamespace}:picks:`), ...picks]), [picks]);
+  const allStoredPicks = useMemo(
+    () => mergeById([...readStoredCollections<Pick>(`${cacheNamespace}:picks:`), ...picks]).map(normalizePickStake),
+    [picks]
+  );
   const allStoredSlips = useMemo(() => mergeById([...readStoredCollections<SlipHistoryItem>(`${cacheNamespace}:slip-history:`), ...slipHistory]), [slipHistory]);
   const monthKey = tipDay.slice(0, 7);
   const monthName = new Intl.DateTimeFormat("pt-PT", { month: "long" }).format(currentDate).replace(/^./, (letter) => letter.toUpperCase());
@@ -1258,8 +1289,8 @@ export function App() {
     if (!slip) return;
     const nextPicks = picks.map((pick) => {
       if (pick.id !== pickId) return pick;
-      const finalStake = slip.mode === "multiples" && slip.pickIds.includes(pickId) ? slip.multiplesStake : pick.stake;
-      return { ...pick, stake: finalStake, status, profit: calculateProfit(status, finalStake, pick.odds) };
+      const finalStake = slip.mode === "multiples" && slip.pickIds.includes(pickId) ? slip.multiplesStake : fixedViewerStake;
+      return { ...pick, stake: fixedViewerStake, status, profit: calculateProfit(status, finalStake, pick.odds) };
     });
     const slipPicks = slip.pickIds
       .map((id) => nextPicks.find((pick) => pick.id === id))
@@ -2133,8 +2164,9 @@ function ViewerBetsPage({
               <span>{index + 1}</span>
               <div>
                 <strong>{pick.selection}</strong>
-                <small>{author.displayName} - {match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
+                <small>{author.displayName} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
               </div>
+              <MatchMiniCard match={match} />
             </div>
           );
         })}
@@ -2178,7 +2210,7 @@ function ViewerBetsPage({
                     <article className="viewer-final-card" key={pick.id}>
                       <small>#{index + 1} - {author.displayName}</small>
                       <strong>{pick.selection}</strong>
-                      <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                      <MatchMiniCard match={match} />
                       <small>@{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
                     </article>
                   );
@@ -2191,7 +2223,7 @@ function ViewerBetsPage({
             return (
               <article className="viewer-final-card" key={pick.id}>
                 <strong>{pick.selection}</strong>
-                <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                <MatchMiniCard match={match} />
                 <small>@{pick.odds.toFixed(2)} · Score {scorePick(pick.id, votes)}</small>
               </article>
             );
@@ -2225,7 +2257,7 @@ function ViewerBetsPage({
               <article className="viewer-pending-row" key={pick.id}>
                 <div>
                   <strong>{pick.selection}</strong>
-                  <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                  <MatchMiniCard match={match} />
                 </div>
                 <b>@{pick.odds.toFixed(2)}</b>
               </article>
@@ -2274,7 +2306,7 @@ function ViewerBetsPage({
                 <article className={`viewer-history-row ${selected ? "selected" : ""}`} key={pick.id}>
                   <div>
                     <strong>{pick.selection}</strong>
-                    <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
+                    <MatchMiniCard match={match} />
                   </div>
                   <small>{pick.marketType} · @{pick.odds.toFixed(2)} · Score {scorePick(pick.id, votes)}</small>
                   <div className={`status ${displayedStatus}`}>{selected ? "Final" : statusLabel(displayedStatus)}</div>
@@ -2334,8 +2366,9 @@ function HistoryPage({
               <span>{index + 1}</span>
               <div>
                 <strong>{pick.selection}</strong>
-                <small>{author.displayName} - {match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
+                <small>{author.displayName} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
               </div>
+              <MatchMiniCard match={match} />
             </div>
           );
         })}
@@ -2716,8 +2749,9 @@ function ResolvePage({
                     <span>{index + 1}</span>
                     <div>
                       <strong>{pick.selection}</strong>
-                      <small>{author.displayName} - {match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"} - @{pick.odds.toFixed(2)}</small>
+                      <small>{author.displayName} - @{pick.odds.toFixed(2)}</small>
                     </div>
+                    <MatchMiniCard match={match} />
                   </div>
                 );
               })}
@@ -2758,9 +2792,9 @@ function ResolvePage({
                   <Avatar user={author} />
                   <div>
                     <strong>{author.displayName}</strong>
-                    <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</span>
                   </div>
                 </div>
+                <MatchMiniCard match={match} />
                 <div>
                   <strong>{pick.selection}</strong>
                   <small>{pick.marketType} - @{pick.odds.toFixed(2)} - {selectedSlip.multiplesStake}u</small>
@@ -2807,9 +2841,9 @@ function LegacyResolvePage({ picks, matches, onSettle }: { picks: Pick[]; matche
                   <Avatar user={author} />
                   <div>
                     <strong>{author.displayName}</strong>
-                    <span>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponível"}</span>
                   </div>
                 </div>
+                <MatchMiniCard match={match} />
                 <div>
                   <strong>{pick.selection}</strong>
                   <small>{pick.marketType} · @{pick.odds.toFixed(2)} · {pick.stake}u</small>

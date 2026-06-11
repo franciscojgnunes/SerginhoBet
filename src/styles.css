@@ -1122,6 +1122,12 @@ h1 {
   margin-top: 4px;
 }
 
+.viewer-final-card .match-mini,
+.viewer-pending-row .match-mini,
+.viewer-history-row .match-mini {
+  margin-top: 8px;
+}
+
 .viewer-history-row {
   align-items: center;
   display: grid;
@@ -1209,7 +1215,7 @@ h1 {
   border-radius: 8px;
   display: grid;
   gap: 10px;
-  grid-template-columns: 30px 1fr;
+  grid-template-columns: 30px minmax(0, 1fr) minmax(240px, 0.8fr);
   padding: 10px;
 }
 
@@ -1233,6 +1239,69 @@ h1 {
   color: var(--muted);
   display: block;
   margin-top: 3px;
+}
+
+.match-mini {
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(183, 255, 52, 0.1), rgba(22, 215, 130, 0.045)),
+    #06130d;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+  min-width: 0;
+  padding: 6px;
+}
+
+.match-mini > div {
+  align-items: center;
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  min-width: 0;
+  text-align: center;
+}
+
+.match-mini .team-logo {
+  height: 30px;
+  width: 30px;
+}
+
+.match-mini strong {
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.72rem;
+  line-height: 1.12;
+  min-height: 1.6em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.match-mini > span {
+  align-items: center;
+  background: rgba(183, 255, 52, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--lime);
+  display: inline-flex;
+  font-size: 0.62rem;
+  font-weight: 950;
+  height: 28px;
+  justify-content: center;
+  text-transform: uppercase;
+  width: 28px;
+}
+
+.match-mini.unavailable {
+  color: var(--muted);
+  display: block;
+  padding: 8px;
+  text-align: center;
 }
 
 .viewer-history-row b {
@@ -2179,7 +2248,7 @@ h1 {
   border-radius: 8px;
   display: grid;
   gap: 10px;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(240px, 0.8fr);
   padding: 10px;
 }
 
@@ -2234,7 +2303,7 @@ h1 {
   border-radius: 8px;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(180px, 1.1fr) minmax(240px, 1.4fr) auto 170px;
+  grid-template-columns: minmax(150px, 0.9fr) minmax(220px, 0.9fr) minmax(220px, 1.1fr) auto 170px;
   padding: 12px;
 }
 
@@ -3059,6 +3128,16 @@ h1 {
 
   .candidate-row {
     grid-template-columns: 1fr;
+  }
+
+  .slip-detail-row,
+  .combined-resolve-item {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .slip-detail-row .match-mini,
+  .combined-resolve-item .match-mini {
+    grid-column: 1 / -1;
   }
 
   .pick-header {

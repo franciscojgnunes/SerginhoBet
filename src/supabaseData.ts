@@ -228,9 +228,9 @@ export async function loadRemoteState(day: string, leagueCode: string, matchDays
 
   const slipsQuery = leagueTablesReady
     ? leagueId
-      ? supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).eq("league_id", leagueId).order("published_at", { ascending: false })
-      : supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).is("league_id", null).order("published_at", { ascending: false })
-    : supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").eq("day", day).order("published_at", { ascending: false });
+      ? supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").in("day", pickDays).eq("league_id", leagueId).order("published_at", { ascending: false })
+      : supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").in("day", pickDays).is("league_id", null).order("published_at", { ascending: false })
+    : supabase.from("daily_slips").select("*, slip_items(pick_id, sort_order)").in("day", pickDays).order("published_at", { ascending: false });
 
   const [profilesResult, matchesResult, oddsResult, picksResult, votesResult, slipsResult] = await Promise.all([
     supabase.from("profiles").select("id,twitch_id,display_name,avatar_url,role"),
@@ -253,11 +253,21 @@ export async function loadRemoteState(day: string, leagueCode: string, matchDays
     const items = [...((row as SlipRow & { slip_items?: SlipItemRow[] }).slip_items ?? [])].sort((left, right) => left.sort_order - right.sort_order);
     return mapSlip(row as SlipRow, items.map((item) => item.pick_id));
   });
+  const baseMatches = (matchesResult.data ?? []).map((row) => mapMatch(row as MatchRow));
+  const loadedMatchIds = new Set(baseMatches.map((match) => match.id));
+  const relatedMatchIds = Array.from(new Set((picksResult.data ?? []).map((row) => (row as PickRow).match_id)))
+    .filter((matchId) => !loadedMatchIds.has(matchId));
+  let relatedMatches: Match[] = [];
+  if (relatedMatchIds.length > 0) {
+    const relatedMatchesResult = await supabase.from("matches").select("*").in("id", relatedMatchIds);
+    if (relatedMatchesResult.error) throw relatedMatchesResult.error;
+    relatedMatches = (relatedMatchesResult.data ?? []).map((row) => mapMatch(row as MatchRow));
+  }
 
   return {
     profiles: (profilesResult.data ?? []).map((row) => mapProfile(row as ProfileRow)),
     league,
-    matches: (matchesResult.data ?? []).map((row) => mapMatch(row as MatchRow)),
+    matches: [...baseMatches, ...relatedMatches],
     odds: oddsTableMissing ? [] : (oddsResult.data ?? []).map((row) => mapMatchOdd(row as MatchOddRow)),
     picks: (picksResult.data ?? []).map((row) => mapPick(row as PickRow)),
     votes: (votesResult.data ?? []).map((row) => mapVote(row as VoteRow)),
@@ -410,6 +420,15 @@ export async function updatePickOdds(pickId: string, odds: number) {
   const { error } = await supabase
     .from("picks")
     .update({ odds })
+    .eq("id", pickId);
+  if (error) throw error;
+}
+
+export async function updatePickStake(pickId: string, stake: number) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("picks")
+    .update({ stake })
     .eq("id", pickId);
   if (error) throw error;
 }
