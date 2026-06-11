@@ -1536,6 +1536,11 @@ h1 {
   min-width: 0;
 }
 
+.pick-form input,
+.pick-form select {
+  height: 48px;
+}
+
 .pick-form input:disabled,
 .pick-form select:disabled {
   cursor: not-allowed;
@@ -2669,7 +2674,32 @@ h1 {
 }
 
 .tip-modal-card .pick-form {
+  align-items: end;
+  gap: 12px;
+  grid-template-columns: minmax(190px, 0.9fr) minmax(320px, 1.55fr) minmax(120px, 0.55fr) minmax(140px, 0.6fr);
   margin-bottom: 0;
+}
+
+.tip-modal-card .pick-form label {
+  align-self: end;
+}
+
+.tip-modal-card .pick-form .selection-field {
+  align-self: stretch;
+}
+
+.tip-modal-card .pick-form .selection-field > select,
+.tip-modal-card .pick-form .manual-selection-input {
+  width: 100%;
+}
+
+.tip-modal-card .pick-form .reason-field {
+  grid-column: 1 / 4;
+}
+
+.tip-modal-card .pick-form button {
+  align-self: stretch;
+  min-height: 76px;
 }
 
 @media (max-width: 1220px) {
