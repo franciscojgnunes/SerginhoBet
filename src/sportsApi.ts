@@ -192,7 +192,7 @@ function mapEspnWorldCupEvent(event: EspnEvent): Match {
 
   return {
     id: `api-football-espn-world-${event.id}`,
-    competition: "Mundial",
+    competition: "World Cup",
     country: "World",
     homeTeam: home?.team?.displayName ?? event.name?.split(" at ")[1] ?? "Casa",
     awayTeam: away?.team?.displayName ?? event.name?.split(" at ")[0] ?? "Fora",

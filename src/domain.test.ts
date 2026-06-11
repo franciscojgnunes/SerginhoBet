@@ -147,7 +147,7 @@ describe("PickRoom domain logic", () => {
     const espnMatch: Match = {
       ...apiFootballMatch,
       id: "api-football-espn-world-1",
-      competition: "Mundial",
+      competition: "World Cup",
       homeTeam: "South Korea",
       awayTeam: "Czechia"
     };
@@ -220,8 +220,8 @@ describe("PickRoom domain logic", () => {
     expect(cleanCompetitionName("  UEFA Champions League  ")).toBe("Champions League");
     expect(cleanCompetitionName("rsa.1")).toBe("RSA Premiership");
     expect(cleanCompetitionName("conmebol.libertadores")).toBe("Copa Libertadores");
-    expect(cleanCompetitionName("World Cup")).toBe("Mundial");
-    expect(cleanCompetitionName("FIFA World Cup")).toBe("Mundial");
+    expect(cleanCompetitionName("World Cup")).toBe("World Cup");
+    expect(cleanCompetitionName("FIFA World Cup")).toBe("World Cup");
   });
 
   it("calculates daily totals and per-viewer stats for streamer decisions", () => {
