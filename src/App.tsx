@@ -16,7 +16,7 @@ import {
   UserRound,
   Vote
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { users } from "./data";
 import {
   buildMatchSlate,
@@ -253,6 +253,12 @@ function keepApiFootballMatches(matches: Match[]) {
   return buildMatchSlate(normalizedMatches, []);
 }
 
+function mergeStableScheduledMatches(...matchGroups: Match[][]) {
+  return filterUpcomingScheduledMatches(keepApiFootballMatches(mergeById(matchGroups.flat()))).sort(
+    (left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()
+  );
+}
+
 function hasExpandedOdds(odds: MatchOdd[]) {
   return odds.some((odd) => odd.marketType !== "1X2");
 }
@@ -477,6 +483,7 @@ export function App() {
   const [authStatus, setAuthStatus] = useState<SyncStatus>("loading");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [matches, setMatches] = useState<Match[]>(() => readStoredValue<Match[]>(matchesCacheKey, []));
+  const matchesRef = useRef(matches);
   const [selectedMatchId, setSelectedMatchId] = useState("");
   const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty">(() => (
     readStoredValue<Match[]>(matchesCacheKey, []).length > 0 ? "live" : "loading"
@@ -509,10 +516,9 @@ export function App() {
 
   useEffect(() => {
     if (matches.length > 0) {
-      const apiMatches = keepApiFootballMatches(matches);
+      const apiMatches = mergeStableScheduledMatches(matches);
       if (apiMatches.length !== matches.length) setMatches(apiMatches);
-      const upcomingMatches = filterUpcomingScheduledMatches(apiMatches);
-      setSelectedMatchId(upcomingMatches[0]?.id ?? "");
+      setSelectedMatchId(apiMatches[0]?.id ?? "");
       if (!hasMatchCoverage(apiMatches, matchDates)) void syncTodayMatches(true);
       return;
     }
@@ -520,6 +526,9 @@ export function App() {
   }, []);
 
   useEffect(() => writeStoredValue(matchesCacheKey, matches), [matches]);
+  useEffect(() => {
+    matchesRef.current = matches;
+  }, [matches]);
   useEffect(() => writeStoredValue(picksCacheKey, picks), [picks]);
   useEffect(() => writeStoredValue(votesCacheKey, votes), [votes]);
   useEffect(() => writeStoredValue(oddsCacheKey, matchOdds), [matchOdds]);
@@ -616,11 +625,8 @@ export function App() {
         }
         const remoteApiMatches = keepApiFootballMatches(remote.matches);
         if (remoteApiMatches.length > 0) {
-          const mergedRemoteMatches = keepApiFootballMatches(mergeById([...matches, ...remoteApiMatches]));
-          setMatches((current) => keepApiFootballMatches(mergeById([...current, ...remoteApiMatches])));
-          setSelectedMatchId((current) => {
-            return mergedRemoteMatches.some((match) => match.id === current) ? current : filterUpcomingScheduledMatches(mergedRemoteMatches)[0]?.id ?? "";
-          });
+          const mergedRemoteMatches = mergeStableScheduledMatches(matchesRef.current, remoteApiMatches);
+          setMatches((current) => mergeStableScheduledMatches(current, remoteApiMatches));
           if (!hasMatchCoverage(mergedRemoteMatches, matchDates)) void syncTodayMatches(true);
           setMatchSync("live");
         }
@@ -672,29 +678,27 @@ export function App() {
 
   async function syncTodayMatches(forceRefresh = false) {
     setMatchSync("loading");
-    const cachedMatches = keepApiFootballMatches(readStoredValue<Match[]>(matchesCacheKey, []));
+    const cachedMatches = mergeStableScheduledMatches(readStoredValue<Match[]>(matchesCacheKey, []));
     if (!forceRefresh && cachedMatches.length > 0 && hasMatchCoverage(cachedMatches, matchDates)) {
-      const upcomingMatches = filterUpcomingScheduledMatches(cachedMatches);
       setMatches(cachedMatches);
-      setSelectedMatchId(upcomingMatches[0]?.id ?? "");
+      setSelectedMatchId(cachedMatches[0]?.id ?? "");
       setMatchSync("live");
       return;
     }
 
     try {
       const todayMatches = await fetchMatchesForDates([currentDate, tomorrowDate], { forceRefresh });
-      const upcomingMatches = filterUpcomingScheduledMatches(todayMatches);
-      if (todayMatches.length > 0) {
-        setMatches(todayMatches);
-        setSelectedMatchId(upcomingMatches[0]?.id ?? "");
+      const mergedMatches = mergeStableScheduledMatches(matchesRef.current, cachedMatches, todayMatches);
+      if (mergedMatches.length > 0) {
+        setMatches(mergedMatches);
+        setSelectedMatchId((current) => mergedMatches.some((match) => match.id === current) ? current : mergedMatches[0]?.id ?? "");
         setMatchSync("live");
-        void saveMatches(todayMatches).catch((error) => console.error("Failed to cache matches", error));
+        void saveMatches(mergedMatches).catch((error) => console.error("Failed to cache matches", error));
         return;
       }
       if (cachedMatches.length > 0) {
-        const upcomingCachedMatches = filterUpcomingScheduledMatches(cachedMatches);
         setMatches(cachedMatches);
-        setSelectedMatchId(upcomingCachedMatches[0]?.id ?? "");
+        setSelectedMatchId((current) => cachedMatches.some((match) => match.id === current) ? current : cachedMatches[0]?.id ?? "");
         setMatchSync("live");
         return;
       }
@@ -703,9 +707,8 @@ export function App() {
       setMatchSync("empty");
     } catch {
       if (cachedMatches.length > 0) {
-        const upcomingCachedMatches = filterUpcomingScheduledMatches(cachedMatches);
         setMatches(cachedMatches);
-        setSelectedMatchId(upcomingCachedMatches[0]?.id ?? "");
+        setSelectedMatchId((current) => cachedMatches.some((match) => match.id === current) ? current : cachedMatches[0]?.id ?? "");
         setMatchSync("live");
       } else {
         setMatches([]);
@@ -729,6 +732,13 @@ export function App() {
     ],
     [scheduledMatches]
   );
+
+  useEffect(() => {
+    if (competitionFilter !== "all" && !competitionOptions.includes(competitionFilter)) {
+      setCompetitionFilter("all");
+    }
+  }, [competitionFilter, competitionOptions]);
+
   const visibleMatches = useMemo(
     () => {
       const normalizedQuery = matchSearch.trim().toLowerCase();
