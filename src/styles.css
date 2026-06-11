@@ -1653,8 +1653,9 @@ h1 {
 }
 
 .pick-header {
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
+  grid-template-columns: minmax(220px, 1fr) minmax(300px, 0.9fr) auto;
 }
 
 .pick-header-actions {
@@ -1692,6 +1693,15 @@ h1 {
 
 .author {
   gap: 10px;
+  min-width: 0;
+}
+
+.author > div {
+  min-width: 0;
+}
+
+.author strong {
+  overflow-wrap: anywhere;
 }
 
 .avatar {
@@ -1808,6 +1818,61 @@ h1 {
   display: block;
   font-size: 0.78rem;
   margin-top: 2px;
+}
+
+.pick-match-card {
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(183, 255, 52, 0.13), rgba(22, 215, 130, 0.06)),
+    #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
+  min-width: 0;
+  padding: 8px;
+}
+
+.pick-match-card > div {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  min-width: 0;
+  text-align: center;
+}
+
+.pick-match-card .team-logo {
+  height: 38px;
+  width: 38px;
+}
+
+.pick-match-card strong {
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.78rem;
+  line-height: 1.12;
+  min-height: 1.75em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.pick-match-card > span {
+  align-items: center;
+  background: rgba(183, 255, 52, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--lime);
+  display: inline-flex;
+  font-size: 0.68rem;
+  font-weight: 950;
+  height: 34px;
+  justify-content: center;
+  text-transform: uppercase;
+  width: 34px;
 }
 
 .status {
@@ -2996,6 +3061,15 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .pick-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pick-match-card {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .resolve-row {
     grid-template-columns: 1fr;
   }
@@ -3159,11 +3233,17 @@ h1 {
 
   .pick-header {
     align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .pick-header-actions {
     justify-content: space-between;
+    width: 100%;
+  }
+
+  .pick-match-card {
+    grid-column: auto;
+    grid-row: auto;
     width: 100%;
   }
 

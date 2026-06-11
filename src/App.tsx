@@ -1390,6 +1390,19 @@ export function App() {
               <span>{pick.selection} · {pick.marketType} · {group.picks.length} tips · {group.authors.length} pessoas</span>
             </div>
           </div>
+          {match ? (
+            <div className="pick-match-card" aria-label={`${match.homeTeam} contra ${match.awayTeam}`}>
+              <div>
+                <TeamLogo src={match.homeLogoUrl} name={match.homeTeam} />
+                <strong>{match.homeTeam}</strong>
+              </div>
+              <span>vs</span>
+              <div>
+                <TeamLogo src={match.awayLogoUrl} name={match.awayTeam} />
+                <strong>{match.awayTeam}</strong>
+              </div>
+            </div>
+          ) : null}
           <div className="pick-header-actions">
             <div className="score-badge" aria-label={`Score ${group.score}`}>
               <span>Score</span>
@@ -1423,7 +1436,6 @@ export function App() {
         <div className="pick-meta">
           <span>@{pick.odds.toFixed(2)}</span>
           <span>{roundUnits(group.picks.reduce((total, groupPick) => total + groupPick.stake, 0))}u sugeridas</span>
-          {match ? <span>{match.homeTeam} vs {match.awayTeam}</span> : null}
         </div>
         <div className="vote-row">
           <button onClick={() => castGroupVote(group, "trust")} disabled={!canVote}>
