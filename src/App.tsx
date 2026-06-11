@@ -156,6 +156,47 @@ function findAvailableOdd(matchOdds: MatchOdd[] | undefined, marketType: MarketT
 type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile";
 type StatsScope = ReturnType<typeof buildStatsScope>;
 type SyncStatus = "idle" | "loading" | "ready" | "saving" | "error";
+type PickGroup = {
+  key: string;
+  picks: Pick[];
+  representative: Pick;
+  score: number;
+  authors: User[];
+};
+
+function pickGroupKey(pick: Pick) {
+  return [
+    pick.matchId,
+    pick.marketType,
+    pick.selection.trim().toLowerCase(),
+    pick.odds.toFixed(2)
+  ].join("|");
+}
+
+function buildPickGroups(picks: Pick[], votes: VoteRecord[]) {
+  const grouped = new Map<string, Pick[]>();
+  for (const pick of picks) {
+    const key = pickGroupKey(pick);
+    grouped.set(key, [...(grouped.get(key) ?? []), pick]);
+  }
+
+  return Array.from(grouped.entries()).map(([key, groupPicks]) => {
+    const orderedPicks = [...groupPicks].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+    return {
+      key,
+      picks: orderedPicks,
+      representative: orderedPicks[0],
+      score: orderedPicks.reduce((total, pick) => total + scorePick(pick.id, votes), 0),
+      authors: Array.from(new Set(orderedPicks.map((pick) => pick.userId))).map(userById)
+    };
+  }).sort((left, right) => {
+    const scoreDelta = right.score - left.score;
+    if (scoreDelta !== 0) return scoreDelta;
+    const countDelta = right.picks.length - left.picks.length;
+    if (countDelta !== 0) return countDelta;
+    return new Date(right.representative.createdAt).getTime() - new Date(left.representative.createdAt).getTime();
+  });
+}
 
 let runtimeUsers: User[] = [...users];
 
@@ -798,21 +839,25 @@ export function App() {
     return !match || new Date(match.startsAt).getTime() > kickoffCheckAt;
   };
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id && isPickBeforeKickoff(pick)) : [];
+  const selectedMatchPickGroups = useMemo(() => buildPickGroups(selectedMatchPicks, votes), [selectedMatchPicks, votes]);
   const communityPicks = [...picks]
     .filter(isPickBeforeKickoff)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const communityPickGroups = useMemo(() => buildPickGroups(communityPicks, votes), [communityPicks, votes]);
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
     .filter((pick): pick is Pick => Boolean(pick));
+  const topSlipPickGroups = useMemo(() => buildPickGroups(topSlipPicks, votes), [topSlipPicks, votes]);
   const resolvableSlipHistory = slipHistory.filter((slip) => slip.settlementStatus === "pending");
   const selectedResolveSlip = resolvableSlipHistory.find((slip) => slip.id === selectedResolveSlipId) ?? resolvableSlipHistory[0];
   const selectedResolvePicks = selectedResolveSlip
     ? selectedResolveSlip.pickIds.map((pickId) => picks.find((pick) => pick.id === pickId)).filter((pick): pick is Pick => Boolean(pick))
     : [];
+  const selectedResolvePickGroups = useMemo(() => buildPickGroups(selectedResolvePicks, votes), [selectedResolvePicks, votes]);
 
-  const combinedOdds = topSlipPicks.reduce((total, pick) => total * pick.odds, 1);
-  const selectedResolveCombinedOdds = selectedResolvePicks.reduce((total, pick) => total * pick.odds, 1);
-  const multiplesStake = topSlipPicks.length * dailySlip.multiplesStake;
+  const combinedOdds = topSlipPickGroups.reduce((total, group) => total * group.representative.odds, 1);
+  const selectedResolveCombinedOdds = selectedResolvePickGroups.reduce((total, group) => total * group.representative.odds, 1);
+  const multiplesStake = topSlipPickGroups.length * dailySlip.multiplesStake;
   const isPublishedSlip = dailySlip.status === "published" && topSlipPicks.length > 0;
   const combinedSlipSettled = dailySlip.mode === "combined" && dailySlip.settlementStatus !== "pending";
   const slipExposure = isPublishedSlip && !combinedSlipSettled
@@ -1045,13 +1090,35 @@ export function App() {
     }
   }
 
+  function castGroupVote(group: PickGroup, type: VoteType) {
+    const nextVotes = group.picks
+      .filter((pick) => pick.userId !== activeUserId)
+      .map((pick) => ({ pickId: pick.id, userId: activeUserId, type }));
+    if (nextVotes.length === 0) return;
+
+    setVotes((current) => [
+      ...current.filter((voteItem) => !nextVotes.some((nextVote) => nextVote.pickId === voteItem.pickId && voteItem.userId === activeUserId)),
+      ...nextVotes
+    ]);
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void Promise.all(nextVotes.map(saveVote))
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to save grouped votes", error);
+          setSyncStatus("error");
+        });
+    }
+  }
+
   function generateSlip() {
+    const groupedPickIds = communityPickGroups.slice(0, 4).flatMap((group) => group.picks.map((pick) => pick.id));
     setDailySlip((slip) => ({
       ...slip,
       status: "draft",
       settlementStatus: "pending",
       profit: 0,
-      pickIds: selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
+      pickIds: groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
       generatedAt: new Date().toISOString()
     }));
   }
@@ -1059,12 +1126,13 @@ export function App() {
   function publishSlip() {
     const publishedAt = new Date().toISOString();
     const historyId = `slip-${Date.now()}`;
+    const groupedPickIds = communityPickGroups.slice(0, 4).flatMap((group) => group.picks.map((pick) => pick.id));
     const nextSlip: DailySlip = {
       ...dailySlip,
       status: "published",
       settlementStatus: "pending",
       profit: 0,
-      pickIds: dailySlip.pickIds.length > 0 ? dailySlip.pickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
+      pickIds: dailySlip.pickIds.length > 0 ? dailySlip.pickIds : groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
       generatedAt: publishedAt
     };
     const historySlip = { ...nextSlip, id: historyId, publishedAt };
@@ -1095,6 +1163,24 @@ export function App() {
         profit: 0,
         generatedAt: new Date().toISOString(),
         pickIds: exists ? slip.pickIds.filter((id) => id !== pickId) : [...slip.pickIds, pickId]
+      };
+    });
+  }
+
+  function toggleFinalPickGroup(group: PickGroup) {
+    const groupIds = group.picks.map((pick) => pick.id);
+    setDailySlip((slip) => {
+      const allSelected = groupIds.every((id) => slip.pickIds.includes(id));
+      const nextIds = allSelected
+        ? slip.pickIds.filter((id) => !groupIds.includes(id))
+        : [...slip.pickIds.filter((id) => !groupIds.includes(id)), ...groupIds];
+      return {
+        ...slip,
+        status: "draft",
+        settlementStatus: "pending",
+        profit: 0,
+        generatedAt: new Date().toISOString(),
+        pickIds: nextIds
       };
     });
   }
@@ -1154,7 +1240,7 @@ export function App() {
     const slipPicks = slip.pickIds
       .map((pickId) => picks.find((pick) => pick.id === pickId))
       .filter((pick): pick is Pick => Boolean(pick));
-    const odds = slipPicks.reduce((total, pick) => total * pick.odds, 1);
+    const odds = buildPickGroups(slipPicks, votes).reduce((total, group) => total * group.representative.odds, 1);
     const profit = calculateProfit(status, slip.combinedStake, odds);
     const nextSlip = { ...slip, settlementStatus: status, profit };
     setSlipHistory((current) =>
@@ -1231,54 +1317,75 @@ export function App() {
     }
   }
 
-  function renderPickCard(pick: Pick) {
-    const author = userById(pick.userId);
+  function renderPickGroupCard(group: PickGroup) {
+    const pick = group.representative;
     const match = matches.find((item) => item.id === pick.matchId);
-    const score = scorePick(pick.id, votes);
-    const selected = dailySlip.pickIds.includes(pick.id);
+    const selected = group.picks.every((groupPick) => dailySlip.pickIds.includes(groupPick.id));
+    const canVote = group.picks.some((groupPick) => groupPick.userId !== activeUserId);
+    const uniqueReasons = group.picks
+      .filter((groupPick) => groupPick.reason.trim() && !normalizeFilterText(groupPick.reason).startsWith("sem justificacao"))
+      .map((groupPick) => ({ pick: groupPick, author: userById(groupPick.userId) }));
 
     return (
-      <article className={`pick-card ${selected ? "final" : ""}`} key={pick.id}>
+      <article className={`pick-card ${selected ? "final" : ""}`} key={group.key}>
         <div className="pick-header">
           <div className="author">
-            <Avatar user={author} />
+            <Avatar user={group.authors[0]} />
             <div>
-              <strong>{author.displayName}</strong>
-              <span>{pick.marketType}</span>
+              <strong>{pick.selection}</strong>
+              <span>{pick.marketType} · {group.picks.length} tips · {group.authors.length} pessoas</span>
             </div>
           </div>
           <div className="pick-header-actions">
-            <div className="score-badge" aria-label={`Score ${score}`}>
+            <div className="score-badge" aria-label={`Score ${group.score}`}>
               <span>Score</span>
-              <strong>{score}</strong>
+              <strong>{group.score}</strong>
             </div>
             <div className={`status ${pick.status}`}>{selected ? "Final" : statusLabel(pick.status)}</div>
           </div>
         </div>
         <div className="pick-body">
-          <h4>{pick.selection}</h4>
-          <p>{pick.reason}</p>
+          <div className="group-authors">
+            {group.authors.map((author) => (
+              <span key={author.id}>
+                <Avatar user={author} />
+                {author.displayName}
+              </span>
+            ))}
+          </div>
+          {uniqueReasons.length > 0 ? (
+            <div className="group-reasons">
+              {uniqueReasons.map(({ pick: reasonPick, author }) => (
+                <blockquote key={reasonPick.id}>
+                  <strong>{author.displayName}</strong>
+                  <span>{reasonPick.reason}</span>
+                </blockquote>
+              ))}
+            </div>
+          ) : (
+            <p>Sem justificação.</p>
+          )}
         </div>
         <div className="pick-meta">
           <span>@{pick.odds.toFixed(2)}</span>
-          <span>{pick.stake}u</span>
+          <span>{roundUnits(group.picks.reduce((total, groupPick) => total + groupPick.stake, 0))}u sugeridas</span>
           {match ? <span>{match.homeTeam} vs {match.awayTeam}</span> : null}
         </div>
         <div className="vote-row">
-          <button onClick={() => castVote(pick.id, "trust")} disabled={pick.userId === activeUserId}>
+          <button onClick={() => castGroupVote(group, "trust")} disabled={!canVote}>
             <ThumbsUp size={16} />
             Confio
           </button>
-          <button onClick={() => castVote(pick.id, "doubt")} disabled={pick.userId === activeUserId}>
+          <button onClick={() => castGroupVote(group, "doubt")} disabled={!canVote}>
             <ThumbsDown size={16} />
             Não confio
           </button>
-          <button onClick={() => castVote(pick.id, "strong")} disabled={pick.userId === activeUserId}>
+          <button onClick={() => castGroupVote(group, "strong")} disabled={!canVote}>
             <Flame size={16} />
             Forte
           </button>
           {isStreamer ? (
-            <button className="streamer-action" onClick={() => toggleFinalPick(pick.id)}>
+            <button className="streamer-action" onClick={() => toggleFinalPickGroup(group)}>
               <ShieldCheck size={16} />
               {selected ? "Remover final" : "Escolher final"}
             </button>
@@ -1292,7 +1399,7 @@ export function App() {
     return (
       <OverlayPage
         slip={dailySlip}
-        picks={topSlipPicks}
+        picks={topSlipPickGroups.map((group) => group.representative)}
         matches={matches}
         combinedOdds={combinedOdds}
         multiplesStake={multiplesStake}
@@ -1456,7 +1563,7 @@ export function App() {
                   Criar tip neste jogo
                 </button>
                 <div className="mini-picks">
-                  {selectedMatchPicks.slice(0, 3).map(renderPickCard)}
+                  {selectedMatchPickGroups.slice(0, 3).map(renderPickGroupCard)}
                   {selectedMatchPicks.length === 0 ? <p className="empty-copy">Abre este jogo e lança a primeira tip da comunidade.</p> : null}
                 </div>
               </>
@@ -1472,10 +1579,10 @@ export function App() {
           <section className="panel community-feed">
             <div className="section-title spread">
               <div><Vote size={18} /><h3>Tips da comunidade</h3></div>
-              <span>{communityPicks.length} tips</span>
+              <span>{communityPickGroups.length} grupos · {communityPicks.length} tips</span>
             </div>
             <div className="pick-stack">
-              {communityPicks.map(renderPickCard)}
+              {communityPickGroups.map(renderPickGroupCard)}
               {communityPicks.length === 0 ? <p className="empty-copy">Ainda não existem tips. Vai à aba Jogos, abre um jogo e cria a primeira.</p> : null}
             </div>
           </section>
@@ -1523,16 +1630,16 @@ export function App() {
                   </label>
                 )}
                 <div className="candidate-list final-only-list">
-                  {topSlipPicks.map((pick) => {
+                  {topSlipPickGroups.map((group) => {
+                    const pick = group.representative;
                     const match = matches.find((item) => item.id === pick.matchId);
-                    const author = userById(pick.userId);
                     return (
-                      <div className="candidate-row selected" key={pick.id}>
+                      <div className="candidate-row selected" key={group.key}>
                         <div>
                           <strong>{pick.selection}</strong>
-                          <small>{author.displayName} · {match?.homeTeam} vs {match?.awayTeam} · Score {scorePick(pick.id, votes)}</small>
+                          <small>{group.authors.map((author) => author.displayName).join(", ")} · {match?.homeTeam} vs {match?.awayTeam} · Score {group.score}</small>
                         </div>
-                        <button onClick={() => toggleFinalPick(pick.id)}>Remover</button>
+                        <button onClick={() => toggleFinalPickGroup(group)}>Remover</button>
                       </div>
                     );
                   })}
@@ -1543,7 +1650,7 @@ export function App() {
               </section>
             ) : null}
             <SlipPanel
-              picks={topSlipPicks}
+              picks={topSlipPickGroups.map((group) => group.representative)}
               matches={matches}
               combinedOdds={combinedOdds}
               combinedStake={dailySlip.combinedStake}

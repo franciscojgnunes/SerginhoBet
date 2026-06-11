@@ -1794,6 +1794,59 @@ h1 {
   line-height: 1.45;
 }
 
+.group-authors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.group-authors span {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 900;
+  gap: 6px;
+  padding: 4px 9px 4px 4px;
+}
+
+.group-authors .avatar {
+  height: 24px;
+  width: 24px;
+}
+
+.group-reasons {
+  display: grid;
+  gap: 8px;
+}
+
+.group-reasons blockquote {
+  background: rgba(255, 255, 255, 0.035);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 6px;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.group-reasons strong,
+.group-reasons span {
+  display: block;
+}
+
+.group-reasons strong {
+  color: var(--lime);
+  font-size: 0.76rem;
+  margin-bottom: 3px;
+}
+
+.group-reasons span {
+  color: var(--muted);
+}
+
 .pick-meta {
   flex-wrap: wrap;
   gap: 8px;
