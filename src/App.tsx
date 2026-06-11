@@ -306,6 +306,14 @@ function formatMatchCompetition(match: Match) {
   return formatCompetitionFilterLabel(competitionFilterKey(match));
 }
 
+function normalizeFilterText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 function competitionRank(key: string) {
   const featured = [
     "England|Premier League",
@@ -484,6 +492,7 @@ export function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [matches, setMatches] = useState<Match[]>(() => readStoredValue<Match[]>(matchesCacheKey, []));
   const matchesRef = useRef(matches);
+  const automaticMatchRefreshRef = useRef(false);
   const [selectedMatchId, setSelectedMatchId] = useState("");
   const [matchSync, setMatchSync] = useState<"loading" | "live" | "empty">(() => (
     readStoredValue<Match[]>(matchesCacheKey, []).length > 0 ? "live" : "loading"
@@ -519,7 +528,7 @@ export function App() {
       const apiMatches = mergeStableScheduledMatches(matches);
       if (apiMatches.length !== matches.length) setMatches(apiMatches);
       setSelectedMatchId(apiMatches[0]?.id ?? "");
-      if (!hasMatchCoverage(apiMatches, matchDates)) void syncTodayMatches(true);
+      requestAutomaticMatchRefresh(apiMatches);
       return;
     }
     void syncTodayMatches();
@@ -627,7 +636,7 @@ export function App() {
         if (remoteApiMatches.length > 0) {
           const mergedRemoteMatches = mergeStableScheduledMatches(matchesRef.current, remoteApiMatches);
           setMatches((current) => mergeStableScheduledMatches(current, remoteApiMatches));
-          if (!hasMatchCoverage(mergedRemoteMatches, matchDates)) void syncTodayMatches(true);
+          requestAutomaticMatchRefresh(mergedRemoteMatches);
           setMatchSync("live");
         }
         setPicks(remote.picks.filter((pick) => isAfterStatsReset(pick.createdAt)));
@@ -718,6 +727,12 @@ export function App() {
     }
   }
 
+  function requestAutomaticMatchRefresh(candidateMatches: Match[]) {
+    if (automaticMatchRefreshRef.current || hasMatchCoverage(candidateMatches, matchDates)) return;
+    automaticMatchRefreshRef.current = true;
+    void syncTodayMatches(true);
+  }
+
   const remoteActiveProfile = remoteProfiles.find((profile) => profile.id === activeUserId);
   const activeUser = remoteActiveProfile ?? authProfile ?? userById(activeUserId);
   const isStreamer = activeUser.role === "streamer";
@@ -741,17 +756,16 @@ export function App() {
 
   const visibleMatches = useMemo(
     () => {
-      const normalizedQuery = matchSearch.trim().toLowerCase();
+      const normalizedQuery = normalizeFilterText(matchSearch);
       return scheduledMatches
         .filter((match) => {
           const competitionLabel = formatCompetitionFilterLabel(competitionFilterKey(match));
           const matchesCompetition = competitionFilter === "all" || competitionFilterKey(match) === competitionFilter;
+          const teamSearchText = normalizeFilterText(`${match.homeTeam} ${match.awayTeam} ${match.country ?? ""}`);
+          const competitionSearchText = normalizeFilterText(`${match.competition} ${competitionLabel}`);
           const matchesSearch = normalizedQuery.length === 0
-            || match.competition.toLowerCase().includes(normalizedQuery)
-            || competitionLabel.toLowerCase().includes(normalizedQuery)
-            || match.homeTeam.toLowerCase().includes(normalizedQuery)
-            || match.awayTeam.toLowerCase().includes(normalizedQuery)
-            || match.country?.toLowerCase().includes(normalizedQuery);
+            || teamSearchText.includes(normalizedQuery)
+            || (normalizedQuery.length >= 3 && competitionSearchText.includes(normalizedQuery));
           return matchesCompetition && matchesSearch;
         })
         .sort((left, right) => {
