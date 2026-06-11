@@ -98,6 +98,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 body.overlay-body {
@@ -328,6 +329,8 @@ h1 {
   display: flex;
   gap: 4px;
   min-width: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 .page-tabs button {
@@ -2740,6 +2743,20 @@ h1 {
   width: min(880px, 100%);
 }
 
+.tip-modal-card::-webkit-scrollbar,
+.page-tabs::-webkit-scrollbar,
+.stats-table::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.tip-modal-card::-webkit-scrollbar-thumb,
+.page-tabs::-webkit-scrollbar-thumb,
+.stats-table::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+}
+
 .tip-modal-header {
   align-items: flex-start;
   border-bottom: 1px solid var(--line);
@@ -2855,16 +2872,32 @@ h1 {
 
   .login-panel {
     align-items: stretch;
-    flex-direction: column;
+    flex-wrap: wrap;
     justify-content: stretch;
+    width: 100%;
   }
 
   .page-tabs {
+    flex: 1 0 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scroll-snap-type: x proximity;
     width: 100%;
   }
 
   .page-tabs button {
-    flex: 1;
+    flex: 0 0 auto;
+    min-width: max-content;
+    scroll-snap-align: start;
+  }
+
+  .topbar-account {
+    flex: 1 1 180px;
+  }
+
+  .league-pill,
+  .logout-button {
+    flex: 0 0 auto;
   }
 
   .games-actions {
@@ -2916,6 +2949,21 @@ h1 {
     grid-template-columns: 1fr 1fr;
   }
 
+  .tip-modal-card {
+    max-height: calc(100dvh - 20px);
+    padding: 12px;
+    width: min(760px, 100%);
+  }
+
+  .tip-modal-card .pick-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tip-modal-card .pick-form .reason-field,
+  .tip-modal-card .pick-form button {
+    grid-column: 1 / -1;
+  }
+
   .viewer-stat-row {
     grid-template-columns: 34px 1fr;
   }
@@ -2964,6 +3012,59 @@ h1 {
 }
 
 @media (max-width: 540px) {
+  .app-shell {
+    padding: 8px;
+  }
+
+  .topbar {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .brand {
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-mark {
+    height: 40px;
+    width: 40px;
+  }
+
+  .brand p {
+    display: none;
+  }
+
+  h1 {
+    font-size: 1.04rem;
+  }
+
+  .login-panel {
+    gap: 6px;
+    padding: 5px;
+  }
+
+  .page-tabs button,
+  .logout-button,
+  .topbar-account,
+  .league-pill {
+    min-height: 38px;
+  }
+
+  .page-tabs button {
+    font-size: 0.8rem;
+    padding: 0 0.72rem;
+  }
+
+  .topbar-account span {
+    max-width: 120px;
+  }
+
+  .league-pill {
+    font-size: 0.68rem;
+    padding: 0 0.58rem;
+  }
+
   .hero-grid {
     padding: 18px;
   }
@@ -2982,12 +3083,38 @@ h1 {
 
   .pick-form {
     grid-template-columns: 1fr;
+    padding: 10px;
   }
 
-  .teams-line,
   .detail-scoreboard {
     grid-template-columns: 1fr;
     text-align: center;
+  }
+
+  .game-card {
+    gap: 10px;
+    min-height: 138px;
+    padding: 12px;
+  }
+
+  .game-card .teams-line {
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
+    min-height: 72px;
+  }
+
+  .team-logo {
+    height: 38px;
+    width: 38px;
+  }
+
+  .versus {
+    height: 34px;
+    width: 34px;
+  }
+
+  .team-side strong {
+    font-size: 0.9rem;
   }
 
   .team-side.away,
@@ -3002,6 +3129,101 @@ h1 {
   .detail-facts,
   .stat-grid.wide,
   .viewer-slip-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .games-toolbar .section-title {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .games-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .games-actions button,
+  .games-actions select {
+    width: 100%;
+  }
+
+  .match-search-field {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .match-search-field span {
+    display: none;
+  }
+
+  .pick-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pick-header-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .pick-meta {
+    gap: 6px;
+  }
+
+  .vote-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-row {
+    padding: 9px;
+  }
+
+  .final-odd-field {
+    width: 100%;
+  }
+
+  .popup-backdrop {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .popup-card {
+    grid-template-columns: 40px 1fr;
+    padding: 14px;
+  }
+
+  .popup-card button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .confirm-actions {
+    grid-column: 1 / -1;
+  }
+
+  .tip-modal-card {
+    border-radius: 8px 8px 0 0;
+    max-height: calc(100dvh - 10px);
+    padding: 12px 10px;
+  }
+
+  .tip-modal-header {
+    align-items: stretch;
+    display: grid;
+    gap: 10px;
+  }
+
+  .tip-modal-header h3 {
+    font-size: 1.05rem;
+  }
+
+  .tip-modal-header button {
+    width: 100%;
+  }
+
+  .tip-modal-card .pick-form {
     grid-template-columns: 1fr;
   }
 
@@ -3030,6 +3252,32 @@ h1 {
 
   .login-choice-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 390px) {
+  .page-tabs button {
+    font-size: 0.76rem;
+    padding: 0 0.62rem;
+  }
+
+  .game-card .teams-line {
+    grid-template-columns: minmax(0, 1fr) 30px minmax(0, 1fr);
+  }
+
+  .team-logo {
+    height: 34px;
+    width: 34px;
+  }
+
+  .versus {
+    font-size: 0.66rem;
+    height: 30px;
+    width: 30px;
+  }
+
+  .team-side strong {
+    font-size: 0.82rem;
   }
 }
 
