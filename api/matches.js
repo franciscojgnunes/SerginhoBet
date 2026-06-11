@@ -1,4 +1,5 @@
 const apiFootballUrl = "https://v3.football.api-sports.io/fixtures";
+const espnWorldCupUrl = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard";
 
 export default async function handler(request, response) {
   response.setHeader("Cache-Control", "no-store, max-age=0");
@@ -16,17 +17,38 @@ export default async function handler(request, response) {
   }
 
   try {
-    const upstream = await fetch(`${apiFootballUrl}?date=${day}&timezone=Europe/Lisbon`, {
-      headers: { "x-apisports-key": apiKey }
-    });
-    if (!upstream.ok) {
-      response.status(upstream.status).json({ response: [], error: "Matches provider failed" });
+    const [upstream, espnWorldCup] = await Promise.all([
+      fetch(`${apiFootballUrl}?date=${day}&timezone=Europe/Lisbon`, {
+        headers: { "x-apisports-key": apiKey }
+      }),
+      fetch(`${espnWorldCupUrl}?dates=${getEspnDateRangeForLocalDay(day)}&limit=200`)
+    ]);
+    if (!upstream.ok && !espnWorldCup.ok) {
+      response.status(upstream.status).json({ response: [], espnWorldCup: [], error: "Matches providers failed" });
       return;
     }
 
-    const data = await upstream.json();
-    response.status(200).json({ response: data.response ?? [] });
+    const data = upstream.ok ? await upstream.json() : { response: [] };
+    const espnData = espnWorldCup.ok ? await espnWorldCup.json() : { events: [] };
+    response.status(200).json({
+      response: data.response ?? [],
+      espnWorldCup: espnData.events ?? []
+    });
   } catch (error) {
-    response.status(500).json({ response: [], error: error instanceof Error ? error.message : "Unknown error" });
+    response.status(500).json({ response: [], espnWorldCup: [], error: error instanceof Error ? error.message : "Unknown error" });
   }
+}
+
+function getEspnDateRangeForLocalDay(day) {
+  const current = new Date(`${day}T12:00:00Z`);
+  const previous = new Date(current.getTime() - 24 * 60 * 60 * 1000);
+  return `${formatEspnDateKey(previous)}-${formatEspnDateKey(current)}`;
+}
+
+function formatEspnDateKey(date) {
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("");
 }

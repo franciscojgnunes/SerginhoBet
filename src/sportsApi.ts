@@ -3,6 +3,7 @@ import type { Match, MatchStatus } from "./types";
 
 type ApiFootballResponse = {
   response?: ApiFootballFixture[];
+  espnWorldCup?: EspnEvent[];
 };
 
 type ApiFootballFixture = {
@@ -36,6 +37,35 @@ type ApiFootballFixture = {
   };
 };
 
+type EspnScoreboardResponse = {
+  events?: EspnEvent[];
+};
+
+type EspnEvent = {
+  id: string;
+  date: string;
+  name?: string;
+  status?: {
+    type?: {
+      name?: string;
+      state?: string;
+    };
+  };
+  competitions?: Array<{
+    competitors?: Array<{
+      homeAway?: "home" | "away";
+      team?: {
+        displayName?: string;
+        logo?: string;
+      };
+      score?: string;
+    }>;
+    venue?: {
+      fullName?: string;
+    };
+  }>;
+};
+
 const dayRequestCache = new Map<string, Promise<Match[]>>();
 
 export async function fetchTodayMatches(date = new Date(), options: { forceRefresh?: boolean } = {}) {
@@ -58,8 +88,11 @@ export async function fetchMatchesForDates(dates: Date[], options: { forceRefres
 }
 
 async function fetchMatchesForDay(day: string, now: Date, forceRefresh = false) {
-  const apiFootballMatches = await fetchApiFootballMatches(day, forceRefresh);
-  return sortUpcomingMatches(apiFootballMatches, day, now);
+  const [apiFootballMatches, espnWorldCupMatches] = await Promise.all([
+    fetchApiFootballMatches(day, forceRefresh),
+    fetchEspnWorldCupMatches(day, forceRefresh)
+  ]);
+  return sortUpcomingMatches(buildMatchSlate(apiFootballMatches, espnWorldCupMatches), day, now);
 }
 
 function sortUpcomingMatches(matches: Match[], day: string, now: Date) {
@@ -103,7 +136,26 @@ async function fetchServerApiFootballMatches(day: string, forceRefresh = false) 
     if (!response.ok) return [];
 
     const data = (await response.json()) as ApiFootballResponse;
-    return (data.response ?? []).map(mapApiFootballFixture);
+    return [
+      ...(data.response ?? []).map(mapApiFootballFixture),
+      ...(data.espnWorldCup ?? []).map(mapEspnWorldCupEvent)
+    ];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchEspnWorldCupMatches(day: string, forceRefresh = false) {
+  try {
+    const dateRange = getEspnDateRangeForLocalDay(day);
+    const cacheBust = forceRefresh ? `&refresh=${Date.now()}` : "";
+    const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${dateRange}&limit=200${cacheBust}`, {
+      cache: "no-store"
+    });
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as EspnScoreboardResponse;
+    return (data.events ?? []).map(mapEspnWorldCupEvent);
   } catch {
     return [];
   }
@@ -130,8 +182,53 @@ function mapApiFootballFixture(event: ApiFootballFixture): Match {
   };
 }
 
+function mapEspnWorldCupEvent(event: EspnEvent): Match {
+  const competition = event.competitions?.[0];
+  const competitors = competition?.competitors ?? [];
+  const home = competitors.find((competitor) => competitor.homeAway === "home") ?? competitors[0];
+  const away = competitors.find((competitor) => competitor.homeAway === "away") ?? competitors[1];
+  const homeScore = Number(home?.score);
+  const awayScore = Number(away?.score);
+
+  return {
+    id: `api-football-espn-world-${event.id}`,
+    competition: "Mundial",
+    country: "World",
+    homeTeam: home?.team?.displayName ?? event.name?.split(" at ")[1] ?? "Casa",
+    awayTeam: away?.team?.displayName ?? event.name?.split(" at ")[0] ?? "Fora",
+    startsAt: event.date,
+    status: getEspnStatus(event.status?.type?.name, event.status?.type?.state),
+    homeScore: Number.isFinite(homeScore) ? homeScore : undefined,
+    awayScore: Number.isFinite(awayScore) ? awayScore : undefined,
+    homeLogoUrl: home?.team?.logo,
+    awayLogoUrl: away?.team?.logo,
+    venue: competition?.venue?.fullName,
+    source: "api"
+  };
+}
+
 function getApiFootballStatus(status?: string): MatchStatus {
   if (!status || status === "NS" || status === "TBD") return "scheduled";
   if (["FT", "AET", "PEN", "PST", "CANC", "ABD", "AWD", "WO"].includes(status)) return "finished";
   return "live";
+}
+
+function getEspnStatus(name?: string, state?: string): MatchStatus {
+  if (state === "post" || name === "STATUS_FINAL") return "finished";
+  if (state === "in") return "live";
+  return "scheduled";
+}
+
+function getEspnDateRangeForLocalDay(day: string) {
+  const current = new Date(`${day}T12:00:00Z`);
+  const previous = new Date(current.getTime() - 24 * 60 * 60 * 1000);
+  return `${formatEspnDateKey(previous)}-${formatEspnDateKey(current)}`;
+}
+
+function formatEspnDateKey(date: Date) {
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("");
 }
