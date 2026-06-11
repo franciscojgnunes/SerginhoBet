@@ -24,6 +24,7 @@ import {
   calculateBankroll,
   calculateDailyStats,
   calculateProfit,
+  cleanCompetitionName,
   filterUpcomingScheduledMatches,
   getLocalDateKey,
   roundUnits,
@@ -248,7 +249,7 @@ function isApiFootballMatch(match: Match) {
 function keepApiFootballMatches(matches: Match[]) {
   const normalizedMatches = matches.filter(isApiFootballMatch).map((match) => ({
     ...match,
-    competition: match.competition === "Mundial" ? "World Cup" : match.competition
+    competition: cleanCompetitionName(match.competition)
   }));
   return buildMatchSlate(normalizedMatches, []);
 }

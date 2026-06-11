@@ -155,6 +155,30 @@ describe("PickRoom domain logic", () => {
     expect(buildMatchSlate([apiFootballMatch], [espnMatch]).map((match) => match.id)).toEqual(["api-football-espn-world-1"]);
   });
 
+  it("deduplicates World Cup aliases and keeps the ESPN match for odds", () => {
+    const apiFootballMatch: Match = {
+      id: "api-football-2",
+      competition: "Mundial",
+      country: "World",
+      homeTeam: "Korea Republic",
+      awayTeam: "Czech Republic",
+      startsAt: "2026-06-12T02:00:00Z",
+      status: "scheduled",
+      source: "api"
+    };
+    const espnMatch: Match = {
+      ...apiFootballMatch,
+      id: "api-football-espn-world-760414",
+      competition: "World Cup",
+      homeTeam: "South Korea",
+      awayTeam: "Czechia"
+    };
+
+    expect(buildMatchSlate([apiFootballMatch], [espnMatch])).toMatchObject([
+      { id: "api-football-espn-world-760414", competition: "World Cup" }
+    ]);
+  });
+
   it("filters the match slate to the selected tip day", () => {
     const matches: Match[] = [
       {

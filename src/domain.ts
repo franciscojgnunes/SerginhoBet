@@ -77,7 +77,23 @@ export function buildMatchSlate(primaryMatches: Match[], secondaryMatches: Match
 }
 
 function normalizeMatchTeam(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+  const aliases: Record<string, string> = {
+    bosniaherzegovina: "bosniaandherzegovina",
+    bosniaandherzegovina: "bosniaandherzegovina",
+    bosniahercegovina: "bosniaandherzegovina",
+    czechrepublic: "czechia",
+    republicacheca: "czechia",
+    southkorea: "southkorea",
+    korearepublic: "southkorea",
+    republicadacoreia: "southkorea",
+    coreiadosul: "southkorea"
+  };
+  return aliases[normalized] ?? normalized;
 }
 
 function isPreferredDuplicate(candidate: Match, current: Match) {
