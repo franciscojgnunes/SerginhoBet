@@ -927,7 +927,6 @@ export function App() {
   const selectedMatchPickGroups = useMemo(() => buildPickGroups(selectedMatchPicks, votes), [selectedMatchPicks, votes]);
   const communityStartDay = communityDayKeys[communityDayKeys.length - 1];
   const communityPicks = [...picks]
-    .filter(isPickBeforeKickoff)
     .filter((pick) => {
       const match = matches.find((item) => item.id === pick.matchId);
       const day = match ? getLocalDateKey(new Date(match.startsAt)) : pick.createdAt.slice(0, 10);
