@@ -59,7 +59,16 @@ export function buildMatchSlate(primaryMatches: Match[], secondaryMatches: Match
   for (const match of [...primaryMatches, ...secondaryMatches]) {
     const teams = [normalizeMatchTeam(match.homeTeam), normalizeMatchTeam(match.awayTeam)].sort().join("-");
     const key = `${teams}-${getLocalDateKey(new Date(match.startsAt))}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      const existingIndex = merged.findIndex((item) => {
+        const existingTeams = [normalizeMatchTeam(item.homeTeam), normalizeMatchTeam(item.awayTeam)].sort().join("-");
+        return `${existingTeams}-${getLocalDateKey(new Date(item.startsAt))}` === key;
+      });
+      if (existingIndex >= 0 && isPreferredDuplicate(match, merged[existingIndex])) {
+        merged[existingIndex] = match;
+      }
+      continue;
+    }
     seen.add(key);
     merged.push(match);
   }
@@ -69,6 +78,12 @@ export function buildMatchSlate(primaryMatches: Match[], secondaryMatches: Match
 
 function normalizeMatchTeam(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function isPreferredDuplicate(candidate: Match, current: Match) {
+  const candidateIsWorldCupEspn = candidate.id.startsWith("api-football-espn-world-");
+  const currentIsWorldCupEspn = current.id.startsWith("api-football-espn-world-");
+  return candidateIsWorldCupEspn && !currentIsWorldCupEspn;
 }
 
 export function filterMatchesForDay(matches: Match[], day: string) {

@@ -152,7 +152,7 @@ describe("PickRoom domain logic", () => {
       awayTeam: "Czechia"
     };
 
-    expect(buildMatchSlate([apiFootballMatch], [espnMatch]).map((match) => match.id)).toEqual(["api-football-1"]);
+    expect(buildMatchSlate([apiFootballMatch], [espnMatch]).map((match) => match.id)).toEqual(["api-football-espn-world-1"]);
   });
 
   it("filters the match slate to the selected tip day", () => {

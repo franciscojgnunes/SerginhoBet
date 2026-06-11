@@ -19,6 +19,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { users } from "./data";
 import {
+  buildMatchSlate,
   buildProfitTimeline,
   calculateBankroll,
   calculateDailyStats,
@@ -47,7 +48,7 @@ const statsResetAt = "2026-05-09T11:20:00.000Z";
 const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v9-worldcup" : "api-football-server-v9-worldcup"}`;
 const picksCacheKey = `${cacheNamespace}:picks:${tipDay}`;
 const votesCacheKey = `${cacheNamespace}:votes:${tipDay}`;
-const oddsCacheKey = `${cacheNamespace}:odds:${tipDay}:${tomorrowDay}:average-markets-v3`;
+const oddsCacheKey = `${cacheNamespace}:odds:${tipDay}:${tomorrowDay}:average-markets-v4-espn-worldcup`;
 const slipCacheKey = `${cacheNamespace}:slip:${tipDay}`;
 const slipHistoryCacheKey = `${cacheNamespace}:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
@@ -195,14 +196,23 @@ function isApiFootballMatch(match: Match) {
 }
 
 function keepApiFootballMatches(matches: Match[]) {
-  return matches.filter(isApiFootballMatch).map((match) => ({
+  const normalizedMatches = matches.filter(isApiFootballMatch).map((match) => ({
     ...match,
     competition: match.competition === "Mundial" ? "World Cup" : match.competition
   }));
+  return buildMatchSlate(normalizedMatches, []);
 }
 
 function hasExpandedOdds(odds: MatchOdd[]) {
   return odds.some((odd) => odd.marketType !== "1X2");
+}
+
+function hasWorldCupEspnOdds(matches: Match[], odds: MatchOdd[]) {
+  const worldCupEspnMatchIds = matches
+    .filter((match) => match.id.startsWith("api-football-espn-world-") && competitionFilterKey(match) === "World|World Cup")
+    .map((match) => match.id);
+  if (worldCupEspnMatchIds.length === 0) return true;
+  return worldCupEspnMatchIds.every((matchId) => odds.some((odd) => odd.matchId === matchId && odd.marketType === "1X2"));
 }
 
 function hasMatchCoverage(matches: Match[], days: string[]) {
@@ -826,11 +836,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!isLoggedIn || hasExpandedOdds(matchOdds)) return;
+    if (!isLoggedIn || (hasExpandedOdds(matchOdds) && hasWorldCupEspnOdds(matches, matchOdds))) return;
     let cancelled = false;
     async function loadOddsOnce() {
       const cachedOdds = readStoredValue<MatchOdd[]>(oddsCacheKey, []);
-      if (cachedOdds.length > 0 && hasExpandedOdds(cachedOdds)) {
+      if (cachedOdds.length > 0 && hasExpandedOdds(cachedOdds) && hasWorldCupEspnOdds(matches, cachedOdds)) {
         setMatchOdds(cachedOdds);
         return;
       }
@@ -850,7 +860,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [isLoggedIn, matchOdds.length]);
+  }, [isLoggedIn, matchOdds.length, matches]);
 
   useEffect(() => {
     if (!isLoggedIn || popup) return;

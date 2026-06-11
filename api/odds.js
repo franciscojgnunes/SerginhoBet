@@ -1,4 +1,5 @@
 const apiFootballUrl = "https://v3.football.api-sports.io/odds";
+const espnWorldCupUrl = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard";
 
 function slugify(value) {
   return String(value ?? "")
@@ -20,6 +21,20 @@ function normalizeSelection(value) {
 function normalizeDecimal(value) {
   const number = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(number) ? Number(number.toFixed(1)) : null;
+}
+
+function extractDecimalLine(value, fallback) {
+  const direct = normalizeDecimal(value);
+  if (direct) return direct;
+  const matched = String(value ?? "").match(/\d+(?:[.,]\d+)?/);
+  return normalizeDecimal(matched?.[0] ?? fallback);
+}
+
+function americanToDecimal(value) {
+  const number = Number(String(value ?? "").replace("+", ""));
+  if (!Number.isFinite(number) || number === 0) return null;
+  const decimal = number > 0 ? 1 + number / 100 : 1 + 100 / Math.abs(number);
+  return Math.round(decimal * 100) / 100;
 }
 
 function normalizeDoubleChance(value) {
@@ -270,11 +285,6 @@ export default async function handler(request, response) {
   response.setHeader("Cache-Control", "no-store, max-age=0");
 
   const apiKey = process.env.API_FOOTBALL_KEY || process.env.VITE_API_FOOTBALL_KEY;
-  if (!apiKey) {
-    response.status(200).json({ odds: [], error: "API_FOOTBALL_KEY is not configured" });
-    return;
-  }
-
   const day = request.query.date;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day ?? "")) {
     response.status(400).json({ odds: [], error: "Invalid date" });
@@ -282,17 +292,30 @@ export default async function handler(request, response) {
   }
 
   try {
+    const fetchedAt = new Date().toISOString();
+    const [apiFootballOdds, espnWorldCupOdds] = await Promise.all([
+      fetchApiFootballOdds(day, apiKey, fetchedAt),
+      fetchEspnWorldCupOdds(day, fetchedAt)
+    ]);
+    const rawOdds = [...apiFootballOdds, ...espnWorldCupOdds];
+    const odds = aggregateAverageOdds(rawOdds);
+
+    response.status(200).json({ odds });
+  } catch (error) {
+    response.status(500).json({ odds: [], error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+async function fetchApiFootballOdds(day, apiKey, fetchedAt) {
+  if (!apiKey) return [];
+  try {
     const upstream = await fetch(`${apiFootballUrl}?date=${day}&timezone=Europe/Lisbon`, {
       headers: { "x-apisports-key": apiKey }
     });
-    if (!upstream.ok) {
-      response.status(upstream.status).json({ odds: [], error: "Odds provider failed" });
-      return;
-    }
+    if (!upstream.ok) return [];
 
     const data = await upstream.json();
-    const fetchedAt = new Date().toISOString();
-    const rawOdds = (data.response ?? []).flatMap((event) => {
+    return (data.response ?? []).flatMap((event) => {
       const fixtureId = event.fixture?.id;
       if (!fixtureId) return [];
 
@@ -314,10 +337,70 @@ export default async function handler(request, response) {
         )
       ).filter((odd) => odd && Number.isFinite(odd.odds) && odd.odds > 1 && odd.selection);
     });
-    const odds = aggregateAverageOdds(rawOdds);
-
-    response.status(200).json({ odds });
-  } catch (error) {
-    response.status(500).json({ odds: [], error: error instanceof Error ? error.message : "Unknown error" });
+  } catch {
+    return [];
   }
+}
+
+async function fetchEspnWorldCupOdds(day, fetchedAt) {
+  try {
+    const upstream = await fetch(`${espnWorldCupUrl}?dates=${getEspnDateRangeForLocalDay(day)}&limit=200`);
+    if (!upstream.ok) return [];
+    const data = await upstream.json();
+    return (data.events ?? []).flatMap((event) => mapEspnEventOdds(event, fetchedAt));
+  } catch {
+    return [];
+  }
+}
+
+function mapEspnEventOdds(event, fetchedAt) {
+  const odds = event.competitions?.[0]?.odds?.[0];
+  if (!odds) return [];
+  const matchId = `api-football-espn-world-${event.id}`;
+  const bookmaker = `${odds.provider?.displayName ?? odds.provider?.name ?? "ESPN"} via ESPN`;
+  const result = [];
+
+  addEspnOdd(result, matchId, "1X2", "Casa vence", odds.moneyline?.home?.close?.odds, bookmaker, fetchedAt);
+  addEspnOdd(result, matchId, "1X2", "Empate", odds.moneyline?.draw?.close?.odds ?? odds.drawOdds?.moneyLine, bookmaker, fetchedAt);
+  addEspnOdd(result, matchId, "1X2", "Fora vence", odds.moneyline?.away?.close?.odds, bookmaker, fetchedAt);
+
+  const overLine = extractDecimalLine(odds.total?.over?.close?.line, odds.overUnder);
+  const underLine = extractDecimalLine(odds.total?.under?.close?.line, odds.overUnder);
+  if (overLine) addEspnOdd(result, matchId, "Over/Under", `Mais de ${overLine} golos`, odds.total?.over?.close?.odds, bookmaker, fetchedAt);
+  if (underLine) addEspnOdd(result, matchId, "Over/Under", `Menos de ${underLine} golos`, odds.total?.under?.close?.odds, bookmaker, fetchedAt);
+
+  const homeSpreadLine = odds.pointSpread?.home?.close?.line;
+  const awaySpreadLine = odds.pointSpread?.away?.close?.line;
+  if (homeSpreadLine) addEspnOdd(result, matchId, "Handicap", `Casa ${homeSpreadLine}`, odds.pointSpread?.home?.close?.odds, bookmaker, fetchedAt);
+  if (awaySpreadLine) addEspnOdd(result, matchId, "Handicap", `Fora ${awaySpreadLine}`, odds.pointSpread?.away?.close?.odds, bookmaker, fetchedAt);
+
+  return result;
+}
+
+function addEspnOdd(target, matchId, marketType, selection, americanOdds, bookmaker, fetchedAt) {
+  const odds = americanToDecimal(americanOdds);
+  if (!odds || odds <= 1) return;
+  target.push({
+    id: "",
+    matchId,
+    marketType,
+    selection,
+    odds,
+    bookmaker,
+    fetchedAt
+  });
+}
+
+function getEspnDateRangeForLocalDay(day) {
+  const current = new Date(`${day}T12:00:00Z`);
+  const previous = new Date(current.getTime() - 24 * 60 * 60 * 1000);
+  return `${formatEspnDateKey(previous)}-${formatEspnDateKey(current)}`;
+}
+
+function formatEspnDateKey(date) {
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("");
 }
