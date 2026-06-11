@@ -309,6 +309,12 @@ function mergeStableScheduledMatches(...matchGroups: Match[][]) {
   );
 }
 
+function mergeMatchesForState(...matchGroups: Match[][]) {
+  return keepApiFootballMatches(mergeById(matchGroups.flat())).sort(
+    (left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()
+  );
+}
+
 function hasExpandedOdds(odds: MatchOdd[]) {
   return odds.some((odd) => odd.marketType !== "1X2");
 }
@@ -715,9 +721,9 @@ export function App() {
         }
         const remoteApiMatches = keepApiFootballMatches(remote.matches);
         if (remoteApiMatches.length > 0) {
-          const mergedRemoteMatches = mergeStableScheduledMatches(matchesRef.current, remoteApiMatches);
-          setMatches((current) => mergeStableScheduledMatches(current, remoteApiMatches));
-          requestAutomaticMatchRefresh(mergedRemoteMatches);
+          const mergedRemoteMatches = mergeMatchesForState(matchesRef.current, remoteApiMatches);
+          setMatches((current) => mergeMatchesForState(current, remoteApiMatches));
+          requestAutomaticMatchRefresh(filterUpcomingScheduledMatches(mergedRemoteMatches));
           setMatchSync("live");
         }
         const resetPicks = remote.picks.filter((pick) => isAfterStatsReset(pick.createdAt));
@@ -777,7 +783,8 @@ export function App() {
     setMatchSync("loading");
     const cachedMatches = mergeStableScheduledMatches(readStoredValue<Match[]>(matchesCacheKey, []));
     if (!forceRefresh && cachedMatches.length > 0 && hasMatchCoverage(cachedMatches, matchDates)) {
-      setMatches(cachedMatches);
+      const nextMatches = mergeMatchesForState(matchesRef.current, cachedMatches);
+      setMatches(nextMatches);
       setSelectedMatchId(cachedMatches[0]?.id ?? "");
       setMatchSync("live");
       return;
@@ -787,24 +794,24 @@ export function App() {
       const todayMatches = await fetchMatchesForDates([currentDate, tomorrowDate], { forceRefresh });
       const mergedMatches = mergeStableScheduledMatches(matchesRef.current, cachedMatches, todayMatches);
       if (mergedMatches.length > 0) {
-        setMatches(mergedMatches);
+        setMatches((current) => mergeMatchesForState(current, mergedMatches));
         setSelectedMatchId((current) => mergedMatches.some((match) => match.id === current) ? current : mergedMatches[0]?.id ?? "");
         setMatchSync("live");
         void saveMatches(mergedMatches).catch((error) => console.error("Failed to cache matches", error));
         return;
       }
       if (cachedMatches.length > 0) {
-        setMatches(cachedMatches);
+        setMatches((current) => mergeMatchesForState(current, cachedMatches));
         setSelectedMatchId((current) => cachedMatches.some((match) => match.id === current) ? current : cachedMatches[0]?.id ?? "");
         setMatchSync("live");
         return;
       }
-      setMatches([]);
+      setMatches((current) => mergeMatchesForState(current));
       setSelectedMatchId("");
       setMatchSync("empty");
     } catch {
       if (cachedMatches.length > 0) {
-        setMatches(cachedMatches);
+        setMatches((current) => mergeMatchesForState(current, cachedMatches));
         setSelectedMatchId((current) => cachedMatches.some((match) => match.id === current) ? current : cachedMatches[0]?.id ?? "");
         setMatchSync("live");
       } else {
