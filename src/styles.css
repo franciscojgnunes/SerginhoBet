@@ -1492,7 +1492,7 @@ h1 {
   border-radius: 8px;
   display: grid;
   gap: 10px;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   padding: 10px;
 }
 
@@ -1518,6 +1518,33 @@ h1 {
   background: rgba(183, 255, 52, 0.12);
   border: 1px solid var(--line-strong);
   color: var(--lime);
+}
+
+.final-odd-field {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.68rem;
+  font-weight: 900;
+  gap: 4px;
+  text-transform: uppercase;
+  width: 88px;
+}
+
+.final-odd-field input {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  height: 38px;
+  min-width: 0;
+  outline: none;
+  padding: 0.35rem 0.52rem;
+  width: 100%;
+}
+
+.final-odd-field input:focus {
+  border-color: var(--lime);
+  box-shadow: 0 0 0 3px rgba(183, 255, 52, 0.12);
 }
 
 .pick-form label {
@@ -1568,6 +1595,36 @@ h1 {
 .pick-stack {
   display: grid;
   gap: 12px;
+}
+
+.community-day-section {
+  display: grid;
+  gap: 10px;
+}
+
+.community-day-heading {
+  align-items: center;
+  background: rgba(183, 255, 52, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.community-day-heading h4 {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.1;
+  margin: 0;
+  text-transform: capitalize;
+}
+
+.community-day-heading span {
+  color: var(--lime);
+  font-size: 0.76rem;
+  font-weight: 950;
+  text-transform: uppercase;
 }
 
 .pick-card {

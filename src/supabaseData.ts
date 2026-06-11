@@ -205,7 +205,7 @@ function mapSlip(row: SlipRow, pickIds: string[]): SlipHistoryItem {
   };
 }
 
-export async function loadRemoteState(day: string, leagueCode: string, matchDays = [day]): Promise<RemoteState> {
+export async function loadRemoteState(day: string, leagueCode: string, matchDays = [day], pickDays = [day]): Promise<RemoteState> {
   if (!supabase) return { profiles: [], matches: [], odds: [], picks: [], votes: [], slipHistory: [] };
 
   const leagueResult = await supabase.from("leagues").select("id,code,name,streamer_id").eq("code", leagueCode).maybeSingle();
@@ -218,9 +218,9 @@ export async function loadRemoteState(day: string, leagueCode: string, matchDays
 
   const picksQuery = leagueTablesReady
     ? leagueId
-      ? supabase.from("picks").select("*").eq("day", day).eq("league_id", leagueId).order("created_at", { ascending: false })
-      : supabase.from("picks").select("*").eq("day", day).is("league_id", null).order("created_at", { ascending: false })
-    : supabase.from("picks").select("*").eq("day", day).order("created_at", { ascending: false });
+      ? supabase.from("picks").select("*").in("day", pickDays).eq("league_id", leagueId).order("created_at", { ascending: false })
+      : supabase.from("picks").select("*").in("day", pickDays).is("league_id", null).order("created_at", { ascending: false })
+    : supabase.from("picks").select("*").in("day", pickDays).order("created_at", { ascending: false });
 
   const votesQuery = leagueTablesReady && leagueId
     ? supabase.from("votes").select("*, picks!inner(league_id)").eq("picks.league_id", leagueId)
@@ -402,6 +402,15 @@ export async function savePick(day: string, pick: Pick, leagueId?: string, match
   };
   if (leagueId) payload.league_id = leagueId;
   const { error } = await supabase.from("picks").insert(payload);
+  if (error) throw error;
+}
+
+export async function updatePickOdds(pickId: string, odds: number) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("picks")
+    .update({ odds })
+    .eq("id", pickId);
   if (error) throw error;
 }
 

@@ -34,7 +34,7 @@ import {
 import { fetchMatchesForDates } from "./sportsApi";
 import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updateProfileAvatar } from "./supabaseData";
+import { ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updateProfileAvatar } from "./supabaseData";
 import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -42,8 +42,14 @@ const tipDay = getLocalDateKey(currentDate);
 const tomorrowDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000);
 const tomorrowDay = getLocalDateKey(tomorrowDate);
 const communityInitialBankroll = 100;
+const fixedViewerStake = 1;
+const communityRetentionDays = 3;
 const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchDates = [tipDay, tomorrowDay];
+const communityDayKeys = Array.from({ length: communityRetentionDays + 1 }, (_, index) => {
+  const date = new Date(currentDate.getTime() + (1 - index) * 24 * 60 * 60 * 1000);
+  return getLocalDateKey(date);
+});
 const cacheNamespace = "serginhobet:clean-20260611";
 const statsResetAt = "2026-06-11T15:45:00.000Z";
 const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v9-worldcup" : "api-football-server-v9-worldcup"}`;
@@ -348,6 +354,16 @@ function formatCompetitionFilterLabel(key: string) {
 
 function formatMatchCompetition(match: Match) {
   return formatCompetitionFilterLabel(competitionFilterKey(match));
+}
+
+function formatCommunityDayLabel(day: string) {
+  if (day === tipDay) return "Hoje";
+  if (day === tomorrowDay) return "Amanhã";
+  return new Intl.DateTimeFormat("pt-PT", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit"
+  }).format(new Date(`${day}T12:00:00Z`));
 }
 
 function normalizeFilterText(value: string) {
@@ -669,7 +685,7 @@ export function App() {
       inFlight = true;
       if (showLoading) setSyncStatus("loading");
       try {
-        const remote = await loadRemoteState(tipDay, defaultLeagueCode, matchDates);
+        const remote = await loadRemoteState(tipDay, defaultLeagueCode, matchDates, communityDayKeys);
         if (!mounted) return;
         setRemoteProfiles(remote.profiles);
         setActiveLeague(remote.league ?? null);
@@ -840,10 +856,27 @@ export function App() {
   };
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id && isPickBeforeKickoff(pick)) : [];
   const selectedMatchPickGroups = useMemo(() => buildPickGroups(selectedMatchPicks, votes), [selectedMatchPicks, votes]);
+  const communityStartDay = communityDayKeys[communityDayKeys.length - 1];
   const communityPicks = [...picks]
     .filter(isPickBeforeKickoff)
+    .filter((pick) => {
+      const match = matches.find((item) => item.id === pick.matchId);
+      const day = match ? getLocalDateKey(new Date(match.startsAt)) : pick.createdAt.slice(0, 10);
+      return day >= communityStartDay;
+    })
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   const communityPickGroups = useMemo(() => buildPickGroups(communityPicks, votes), [communityPicks, votes]);
+  const communitySections = useMemo(() => {
+    const sections = new Map<string, PickGroup[]>();
+    for (const group of communityPickGroups) {
+      const match = matches.find((item) => item.id === group.representative.matchId);
+      const day = match ? getLocalDateKey(new Date(match.startsAt)) : group.representative.createdAt.slice(0, 10);
+      sections.set(day, [...(sections.get(day) ?? []), group]);
+    }
+    return Array.from(sections.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([day, groups]) => ({ day, groups }));
+  }, [communityPickGroups, matches]);
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
     .filter((pick): pick is Pick => Boolean(pick));
@@ -1028,14 +1061,14 @@ export function App() {
 
   function submitPick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const stake = Number(formState.stake);
+    const stake = fixedViewerStake;
     const manualOdds = Number(formState.odds);
     const targetMatch = tipModalMatch ?? selectedMatch;
     const matchSpecificOdds = targetMatch ? matchOdds.filter((odd) => odd.matchId === targetMatch.id) : [];
     const apiOdd = findAvailableOdd(matchSpecificOdds, formState.marketType, formState.selection);
     const finalOdds = apiOdd?.odds ?? manualOdds;
     const bookmaker = apiOdd?.bookmaker ?? (formState.bookmaker === manualOverrideBookmaker ? "Manual" : formState.bookmaker.trim() || "Manual");
-    if (!targetMatch || !formState.selection.trim() || finalOdds <= 1 || stake <= 0) return;
+    if (!targetMatch || !formState.selection.trim() || finalOdds <= 1) return;
 
     const nextPick: Pick = {
       id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1066,7 +1099,7 @@ export function App() {
       title: "Pick registada",
       body: `${nextPick.selection} ficou guardada no teu historico e ja aparece na comunidade para votacao.`
     });
-    setFormState({ marketType: "1X2", selection: "", odds: "2.00", stake: "1", bookmaker: "Manual", reason: "" });
+    setFormState({ marketType: "1X2", selection: "", odds: "2.00", stake: String(fixedViewerStake), bookmaker: "Manual", reason: "" });
     setTipModalMatchId(null);
   }
 
@@ -1197,6 +1230,27 @@ export function App() {
   function setMultiplesStake(value: number) {
     if (!Number.isFinite(value) || value <= 0) return;
     setDailySlip((slip) => ({ ...slip, status: "draft", settlementStatus: "pending", profit: 0, multiplesStake: value, generatedAt: new Date().toISOString() }));
+  }
+
+  function updateFinalGroupOdds(group: PickGroup, value: number) {
+    if (!Number.isFinite(value) || value <= 1) return;
+    const groupIds = new Set(group.picks.map((pick) => pick.id));
+    setPicks((current) => current.map((pick) => groupIds.has(pick.id) ? { ...pick, odds: value, bookmaker: "Ajustado pelo streamer" } : pick));
+    setDailySlip((slip) => ({
+      ...slip,
+      settlementStatus: "pending",
+      profit: 0,
+      generatedAt: slip.status === "published" ? slip.generatedAt : new Date().toISOString()
+    }));
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void Promise.all(group.picks.map((pick) => updatePickOdds(pick.id, value)))
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to update final odds", error);
+          setSyncStatus("error");
+        });
+    }
   }
 
   function settlePick(slipId: string, pickId: string, status: PickStatus) {
@@ -1332,8 +1386,8 @@ export function App() {
           <div className="author">
             <Avatar user={group.authors[0]} />
             <div>
-              <strong>{pick.selection}</strong>
-              <span>{pick.marketType} · {group.picks.length} tips · {group.authors.length} pessoas</span>
+              <strong>{match ? `${match.homeTeam} vs ${match.awayTeam}` : pick.selection}</strong>
+              <span>{pick.selection} · {pick.marketType} · {group.picks.length} tips · {group.authors.length} pessoas</span>
             </div>
           </div>
           <div className="pick-header-actions">
@@ -1582,7 +1636,15 @@ export function App() {
               <span>{communityPickGroups.length} grupos · {communityPicks.length} tips</span>
             </div>
             <div className="pick-stack">
-              {communityPickGroups.map(renderPickGroupCard)}
+              {communitySections.map((section) => (
+                <section className="community-day-section" key={section.day}>
+                  <div className="community-day-heading">
+                    <h4>{formatCommunityDayLabel(section.day)}</h4>
+                    <span>{section.groups.length} grupos</span>
+                  </div>
+                  {section.groups.map(renderPickGroupCard)}
+                </section>
+              ))}
               {communityPicks.length === 0 ? <p className="empty-copy">Ainda não existem tips. Vai à aba Jogos, abre um jogo e cria a primeira.</p> : null}
             </div>
           </section>
@@ -1639,6 +1701,16 @@ export function App() {
                           <strong>{pick.selection}</strong>
                           <small>{group.authors.map((author) => author.displayName).join(", ")} · {match?.homeTeam} vs {match?.awayTeam} · Score {group.score}</small>
                         </div>
+                        <label className="final-odd-field">
+                          Odd
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="1.01"
+                            value={pick.odds}
+                            onChange={(event) => updateFinalGroupOdds(group, Number(event.target.value))}
+                          />
+                        </label>
                         <button onClick={() => toggleFinalPickGroup(group)}>Remover</button>
                       </div>
                     );
@@ -2390,8 +2462,8 @@ function TipForm({
           />
         </label>
         <label>
-          Stake sugerida
-          <input type="number" step="0.5" min="0.5" value={formState.stake} onChange={(event) => onChange((state) => ({ ...state, stake: event.target.value }))} />
+          Stake fixa
+          <input type="text" value={`${fixedViewerStake}u`} readOnly disabled />
         </label>
         <label className="reason-field">
           Argumento opcional
