@@ -601,6 +601,8 @@ export function App() {
   const [activePage, setActivePage] = useState<Page>("games");
   const [competitionFilter, setCompetitionFilter] = useState("all");
   const [matchSearch, setMatchSearch] = useState("");
+  const [communityMatchFilter, setCommunityMatchFilter] = useState("all");
+  const [communityMatchSearch, setCommunityMatchSearch] = useState("");
   const [formState, setFormState] = useState({
     marketType: "1X2" as MarketType,
     selection: "",
@@ -900,7 +902,34 @@ export function App() {
       return day >= communityStartDay;
     })
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-  const communityPickGroups = useMemo(() => buildPickGroups(communityPicks, votes), [communityPicks, votes]);
+  const communityMatchOptions = useMemo(() => {
+    const byId = new Map<string, Match>();
+    for (const pick of communityPicks) {
+      const match = matches.find((item) => item.id === pick.matchId);
+      if (match) byId.set(match.id, match);
+    }
+    return Array.from(byId.values()).sort((left, right) => {
+      const dateDelta = new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
+      if (dateDelta !== 0) return dateDelta;
+      return `${left.homeTeam} ${left.awayTeam}`.localeCompare(`${right.homeTeam} ${right.awayTeam}`);
+    });
+  }, [communityPicks, matches]);
+  useEffect(() => {
+    if (communityMatchFilter !== "all" && !communityMatchOptions.some((match) => match.id === communityMatchFilter)) {
+      setCommunityMatchFilter("all");
+    }
+  }, [communityMatchFilter, communityMatchOptions]);
+  const filteredCommunityPicks = useMemo(() => {
+    const normalizedQuery = normalizeFilterText(communityMatchSearch);
+    return communityPicks.filter((pick) => {
+      const match = matches.find((item) => item.id === pick.matchId);
+      const matchesDropdown = communityMatchFilter === "all" || pick.matchId === communityMatchFilter;
+      const searchText = normalizeFilterText(match ? `${match.homeTeam} ${match.awayTeam} ${match.competition} ${match.country ?? ""}` : pick.selection);
+      const matchesSearch = normalizedQuery.length === 0 || searchText.includes(normalizedQuery);
+      return matchesDropdown && matchesSearch;
+    });
+  }, [communityMatchFilter, communityMatchSearch, communityPicks, matches]);
+  const communityPickGroups = useMemo(() => buildPickGroups(filteredCommunityPicks, votes), [filteredCommunityPicks, votes]);
   const communitySections = useMemo(() => {
     const sections = new Map<string, PickGroup[]>();
     for (const group of communityPickGroups) {
@@ -1424,8 +1453,8 @@ export function App() {
           <div className="author">
             <Avatar user={group.authors[0]} />
             <div>
-              <strong>{match ? `${match.homeTeam} vs ${match.awayTeam}` : pick.selection}</strong>
-              <span>{pick.selection} · {pick.marketType} · {group.picks.length} tips · {group.authors.length} pessoas</span>
+              <strong>{pick.selection}</strong>
+              <span>{pick.marketType} · {group.picks.length} tips · {group.authors.length} pessoas</span>
             </div>
           </div>
           {match ? (
@@ -1683,7 +1712,26 @@ export function App() {
           <section className="panel community-feed">
             <div className="section-title spread">
               <div><Vote size={18} /><h3>Tips da comunidade</h3></div>
-              <span>{communityPickGroups.length} grupos · {communityPicks.length} tips</span>
+              <span>{communityPickGroups.length} grupos · {filteredCommunityPicks.length}/{communityPicks.length} tips</span>
+            </div>
+            <div className="community-filters">
+              <label className="match-search-field">
+                <span>Jogo</span>
+                <input
+                  value={communityMatchSearch}
+                  onChange={(event) => setCommunityMatchSearch(event.target.value)}
+                  placeholder="Pesquisar equipa ou competição"
+                  aria-label="Pesquisar jogo na comunidade"
+                />
+              </label>
+              <select value={communityMatchFilter} onChange={(event) => setCommunityMatchFilter(event.target.value)} aria-label="Filtrar tips por jogo">
+                <option value="all">Todos os jogos</option>
+                {communityMatchOptions.map((match) => (
+                  <option value={match.id} key={match.id}>
+                    {match.homeTeam} vs {match.awayTeam}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="pick-stack">
               {communitySections.map((section) => (
@@ -1696,6 +1744,7 @@ export function App() {
                 </section>
               ))}
               {communityPicks.length === 0 ? <p className="empty-copy">Ainda não existem tips. Vai à aba Jogos, abre um jogo e cria a primeira.</p> : null}
+              {communityPicks.length > 0 && filteredCommunityPicks.length === 0 ? <p className="empty-copy">Não há tips para esse filtro de jogo.</p> : null}
             </div>
           </section>
 

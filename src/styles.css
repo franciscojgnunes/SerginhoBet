@@ -679,6 +679,7 @@ h1 {
 }
 
 .games-actions select,
+.community-filters select,
 .match-search-field input {
   background: #07150e;
   border: 1px solid var(--line);
@@ -709,6 +710,7 @@ h1 {
 }
 
 .match-search-field input:focus,
+.community-filters select:focus,
 .games-actions select:focus {
   border-color: var(--lime);
   box-shadow: 0 0 0 3px rgba(183, 255, 52, 0.12);
@@ -962,6 +964,26 @@ h1 {
 
 .community-feed {
   min-width: 0;
+}
+
+.community-filters {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 1fr) minmax(240px, 0.75fr);
+  margin-bottom: 12px;
+  padding: 10px;
+}
+
+.community-filters select {
+  font-size: 0.84rem;
+  font-weight: 850;
+  min-height: 38px;
+  outline: none;
+  padding: 0 0.75rem;
 }
 
 .stats-page {
@@ -3039,9 +3061,14 @@ h1 {
   }
 
   .games-actions select,
+  .community-filters select,
   .match-search-field,
   .match-search-field input {
     width: 100%;
+  }
+
+  .community-filters {
+    grid-template-columns: 1fr;
   }
 
   .stat-grid.wide {
@@ -3296,7 +3323,8 @@ h1 {
   }
 
   .games-actions button,
-  .games-actions select {
+  .games-actions select,
+  .community-filters select {
     width: 100%;
   }
 
