@@ -54,6 +54,8 @@ const slipCacheKey = `${cacheNamespace}:slip:${tipDay}`;
 const slipHistoryCacheKey = `${cacheNamespace}:slip-history:${tipDay}`;
 const defaultLeagueCode = "SERGINHO";
 const fallbackUser: User = { id: "unknown-user", displayName: "Utilizador", role: "viewer", avatarColor: "#16d782" };
+const manualSelectionValue = "__manual_selection__";
+const manualOverrideBookmaker = "Manual Override";
 
 const marketOptions: MarketType[] = [
   "1X2",
@@ -987,7 +989,7 @@ export function App() {
     const matchSpecificOdds = targetMatch ? matchOdds.filter((odd) => odd.matchId === targetMatch.id) : [];
     const apiOdd = findAvailableOdd(matchSpecificOdds, formState.marketType, formState.selection);
     const finalOdds = apiOdd?.odds ?? manualOdds;
-    const bookmaker = apiOdd?.bookmaker ?? (formState.bookmaker.trim() || "Manual");
+    const bookmaker = apiOdd?.bookmaker ?? (formState.bookmaker === manualOverrideBookmaker ? "Manual" : formState.bookmaker.trim() || "Manual");
     if (!targetMatch || !formState.selection.trim() || finalOdds <= 1 || stake <= 0) return;
 
     const nextPick: Pick = {
@@ -2204,10 +2206,11 @@ function TipForm({
   const selectionOptions = availableOdds.map((odd) => odd.selection);
   const selectedOdd = findAvailableOdd(availableOdds, formState.marketType, formState.selection);
   const hasApiOdds = selectionOptions.length > 0;
+  const isManualOddsMode = !hasApiOdds || formState.bookmaker === manualOverrideBookmaker;
   const canSubmit = Boolean(
     selectedMatch
     && formState.selection.trim()
-    && (selectedOdd || (!hasApiOdds && Number(formState.odds) > 1))
+    && (selectedOdd || (isManualOddsMode && Number(formState.odds) > 1))
   );
 
   return (
@@ -2226,28 +2229,43 @@ function TipForm({
         <label className="selection-field">
           Pick
           {hasApiOdds ? (
-            <select
-              value={formState.selection}
-              onChange={(event) => {
-                const nextOdd = findAvailableOdd(availableOdds, formState.marketType, event.target.value);
-                onChange((state) => ({
-                  ...state,
-                  selection: event.target.value,
-                  odds: nextOdd ? nextOdd.odds.toFixed(2) : "",
-                  bookmaker: nextOdd?.bookmaker ?? state.bookmaker
-                }));
-              }}
-            >
-              <option value="">Escolhe a pick</option>
-              {selectionOptions.map((selection) => {
-                const odd = findAvailableOdd(availableOdds, formState.marketType, selection);
-                return (
-                <option value={selection} key={selection}>
-                  {odd ? `${selection} @${odd.odds.toFixed(2)}` : selection}
-                </option>
-                );
-              })}
-            </select>
+            <>
+              <select
+                value={isManualOddsMode ? manualSelectionValue : formState.selection}
+                onChange={(event) => {
+                  if (event.target.value === manualSelectionValue) {
+                    onChange((state) => ({ ...state, selection: "", odds: "", bookmaker: manualOverrideBookmaker }));
+                    return;
+                  }
+                  const nextOdd = findAvailableOdd(availableOdds, formState.marketType, event.target.value);
+                  onChange((state) => ({
+                    ...state,
+                    selection: event.target.value,
+                    odds: nextOdd ? nextOdd.odds.toFixed(2) : "",
+                    bookmaker: nextOdd?.bookmaker ?? "API-Football"
+                  }));
+                }}
+              >
+                <option value="">Escolhe a pick</option>
+                {selectionOptions.map((selection) => {
+                  const odd = findAvailableOdd(availableOdds, formState.marketType, selection);
+                  return (
+                  <option value={selection} key={selection}>
+                    {odd ? `${selection} @${odd.odds.toFixed(2)}` : selection}
+                  </option>
+                  );
+                })}
+                <option value={manualSelectionValue}>Escrever pick/odd manualmente</option>
+              </select>
+              {isManualOddsMode ? (
+                <input
+                  className="manual-selection-input"
+                  placeholder={marketPlaceholders[formState.marketType]}
+                  value={formState.selection}
+                  onChange={(event) => onChange((state) => ({ ...state, selection: event.target.value, bookmaker: manualOverrideBookmaker }))}
+                />
+              ) : null}
+            </>
           ) : (
             <input placeholder={marketPlaceholders[formState.marketType]} value={formState.selection} onChange={(event) => onChange((state) => ({ ...state, selection: event.target.value, bookmaker: "Manual" }))} />
           )}
@@ -2258,10 +2276,10 @@ function TipForm({
             type="number"
             step="0.01"
             min="1.01"
-            value={hasApiOdds ? selectedOdd?.odds.toFixed(2) ?? "" : formState.odds}
-            readOnly={hasApiOdds}
-            disabled={hasApiOdds}
-            onChange={(event) => onChange((state) => ({ ...state, odds: event.target.value, bookmaker: "Manual" }))}
+            value={!isManualOddsMode ? selectedOdd?.odds.toFixed(2) ?? "" : formState.odds}
+            readOnly={!isManualOddsMode}
+            disabled={!isManualOddsMode}
+            onChange={(event) => onChange((state) => ({ ...state, odds: event.target.value, bookmaker: isManualOddsMode ? manualOverrideBookmaker : "Manual" }))}
           />
         </label>
         <label>
