@@ -57,13 +57,18 @@ export function buildMatchSlate(primaryMatches: Match[], secondaryMatches: Match
   const merged: Match[] = [];
 
   for (const match of [...primaryMatches, ...secondaryMatches]) {
-    const key = `${match.homeTeam.toLowerCase()}-${match.awayTeam.toLowerCase()}-${match.startsAt.slice(0, 10)}`;
+    const teams = [normalizeMatchTeam(match.homeTeam), normalizeMatchTeam(match.awayTeam)].sort().join("-");
+    const key = `${teams}-${getLocalDateKey(new Date(match.startsAt))}`;
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(match);
   }
 
   return merged;
+}
+
+function normalizeMatchTeam(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 export function filterMatchesForDay(matches: Match[], day: string) {
@@ -97,6 +102,8 @@ const competitionNameMap: Record<string, string> = {
   "South African Premiership": "RSA Premiership",
   "UEFA Champions League": "Champions League",
   "USL Championship": "USL Championship",
+  "FIFA World Cup": "Mundial",
+  "World Cup": "Mundial",
   "arg.1": "Argentina Liga Profesional",
   "arg.2": "Argentina 2ª Liga",
   "aut.1": "Áustria Bundesliga",

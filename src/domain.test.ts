@@ -133,6 +133,28 @@ describe("PickRoom domain logic", () => {
     expect(buildMatchSlate([firstProvider], [secondProvider]).map((match) => match.id)).toEqual(["espn-1"]);
   });
 
+  it("deduplicates provider matches when home and away are inverted", () => {
+    const apiFootballMatch: Match = {
+      id: "api-football-1",
+      competition: "World Cup",
+      country: "World",
+      homeTeam: "Czechia",
+      awayTeam: "South Korea",
+      startsAt: "2026-06-12T02:00:00Z",
+      status: "scheduled",
+      source: "api"
+    };
+    const espnMatch: Match = {
+      ...apiFootballMatch,
+      id: "api-football-espn-world-1",
+      competition: "Mundial",
+      homeTeam: "South Korea",
+      awayTeam: "Czechia"
+    };
+
+    expect(buildMatchSlate([apiFootballMatch], [espnMatch]).map((match) => match.id)).toEqual(["api-football-1"]);
+  });
+
   it("filters the match slate to the selected tip day", () => {
     const matches: Match[] = [
       {
@@ -198,6 +220,8 @@ describe("PickRoom domain logic", () => {
     expect(cleanCompetitionName("  UEFA Champions League  ")).toBe("Champions League");
     expect(cleanCompetitionName("rsa.1")).toBe("RSA Premiership");
     expect(cleanCompetitionName("conmebol.libertadores")).toBe("Copa Libertadores");
+    expect(cleanCompetitionName("World Cup")).toBe("Mundial");
+    expect(cleanCompetitionName("FIFA World Cup")).toBe("Mundial");
   });
 
   it("calculates daily totals and per-viewer stats for streamer decisions", () => {

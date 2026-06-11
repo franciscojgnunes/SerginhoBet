@@ -44,7 +44,7 @@ const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchDates = [tipDay, tomorrowDay];
 const cacheNamespace = "serginhobet:clean-20260509";
 const statsResetAt = "2026-05-09T11:20:00.000Z";
-const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v5-worldcup" : "api-football-server-v5-worldcup"}`;
+const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v6-worldcup" : "api-football-server-v6-worldcup"}`;
 const picksCacheKey = `${cacheNamespace}:picks:${tipDay}`;
 const votesCacheKey = `${cacheNamespace}:votes:${tipDay}`;
 const oddsCacheKey = `${cacheNamespace}:odds:${tipDay}:${tomorrowDay}:average-markets-v3`;
@@ -241,6 +241,7 @@ function competitionRank(key: string) {
     "France|Ligue 1",
     "Portugal|Primeira Liga",
     "Portugal|Liga Portugal",
+    "World|Mundial",
     "World|UEFA Champions League",
     "World|UEFA Europa League",
     "World|Copa Libertadores",
