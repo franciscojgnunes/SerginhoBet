@@ -442,6 +442,20 @@ export async function updatePickSettlement(pickId: string, status: PickStatus, p
   if (error) throw error;
 }
 
+export async function deletePick(pickId: string) {
+  if (!supabase) return;
+  const client = supabase;
+  const [voteResult, slipItemResult] = await Promise.all([
+    client.from("votes").delete().eq("pick_id", pickId),
+    client.from("slip_items").delete().eq("pick_id", pickId)
+  ]);
+  if (voteResult.error) throw voteResult.error;
+  if (slipItemResult.error) throw slipItemResult.error;
+
+  const { error } = await client.from("picks").delete().eq("id", pickId);
+  if (error) throw error;
+}
+
 export async function saveVote(vote: Vote) {
   if (!supabase) return;
   const { error } = await supabase.from("votes").upsert({

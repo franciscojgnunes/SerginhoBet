@@ -2140,6 +2140,25 @@ h1 {
   padding: 0.35rem 0.6rem;
 }
 
+.community-admin-actions {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.community-admin-actions .settlement-odd-field {
+  margin-top: 0;
+  width: 96px;
+}
+
+.danger-action {
+  background: rgba(255, 80, 80, 0.12);
+  border: 1px solid rgba(255, 120, 120, 0.34);
+  color: #ff8f8f;
+}
+
 .vote-row {
   flex-wrap: wrap;
   gap: 8px;

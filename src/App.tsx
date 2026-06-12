@@ -33,7 +33,7 @@ import {
 import { fetchMatchesForDates } from "./sportsApi";
 import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickSettlement, updatePickStake, updateProfileAvatar } from "./supabaseData";
+import { deletePick, ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickSettlement, updatePickStake, updateProfileAvatar } from "./supabaseData";
 import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -659,6 +659,7 @@ export function App() {
     readStoredValue<Match[]>(matchesCacheKey, []).length > 0 ? "live" : "loading"
   ));
   const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []).map(normalizePickStake));
+  const [localPickOverrides, setLocalPickOverrides] = useState<Record<string, Partial<Pick> | null>>({});
   const [votes, setVotes] = useState<VoteRecord[]>(() => readStoredValue<VoteRecord[]>(votesCacheKey, []));
   const [matchOdds, setMatchOdds] = useState<MatchOdd[]>(() => readStoredValue<MatchOdd[]>(oddsCacheKey, []));
   const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
@@ -802,7 +803,13 @@ export function App() {
           requestAutomaticMatchRefresh(filterUpcomingScheduledMatches(mergedRemoteMatches));
           setMatchSync("live");
         }
-        const resetPicks = remote.picks.filter((pick) => isAfterStatsReset(pick.createdAt));
+        const resetPicks = remote.picks
+          .filter((pick) => isAfterStatsReset(pick.createdAt))
+          .map((pick) => {
+            const override = localPickOverrides[pick.id];
+            return override ? { ...pick, ...override } : pick;
+          })
+          .filter((pick) => localPickOverrides[pick.id] !== null);
         const oldStakePicks = resetPicks.filter((pick) => pick.stake !== fixedViewerStake);
         setPicks(resetPicks.map(normalizePickStake));
         if (oldStakePicks.length > 0) {
@@ -837,7 +844,7 @@ export function App() {
       mounted = false;
       window.clearInterval(refreshTimer);
     };
-  }, [authProfile, isLoggedIn, isOverlayRoute]);
+  }, [authProfile, isLoggedIn, isOverlayRoute, localPickOverrides]);
 
   useEffect(() => {
     document.body.classList.toggle("overlay-body", isOverlayRoute);
@@ -1455,6 +1462,7 @@ export function App() {
     const profit = calculateProfit(status, fixedViewerStake, targetPick.odds);
     const nextPick = { ...targetPick, stake: fixedViewerStake, status, profit };
     setPicks((current) => current.map((pick) => pick.id === pickId ? nextPick : pick));
+    setLocalPickOverrides((current) => ({ ...current, [pickId]: { stake: fixedViewerStake, status, profit } }));
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
       void Promise.all([
@@ -1464,6 +1472,60 @@ export function App() {
         .then(() => setSyncStatus("ready"))
         .catch((error) => {
           console.error("Failed to classify pick", error);
+          setSyncStatus("error");
+        });
+    }
+  }
+
+  function updateCommunityGroupOdds(group: PickGroup, value: number) {
+    if (!isPlatformAdmin || !Number.isFinite(value) || value <= 1) return;
+    const groupIds = new Set(group.picks.map((pick) => pick.id));
+    const nextOverrides: Record<string, Partial<Pick>> = {};
+    const nextPicks = picks.map((pick) => {
+      if (!groupIds.has(pick.id)) return pick;
+      const profit = pick.status === "pending" ? pick.profit : calculateProfit(pick.status, fixedViewerStake, value);
+      nextOverrides[pick.id] = { odds: value, profit, bookmaker: "Ajustado pelo admin" };
+      return { ...pick, odds: value, profit, bookmaker: "Ajustado pelo admin" };
+    });
+    setPicks(nextPicks);
+    setLocalPickOverrides((current) => ({ ...current, ...nextOverrides }));
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void Promise.all(group.picks.flatMap((pick) => {
+        const nextProfit = pick.status === "pending" ? pick.profit : calculateProfit(pick.status, fixedViewerStake, value);
+        return [
+          updatePickOdds(pick.id, value),
+          pick.status !== "pending" ? updatePickSettlement(pick.id, pick.status, nextProfit) : Promise.resolve()
+        ];
+      }))
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to update community odds", error);
+          setSyncStatus("error");
+        });
+    }
+  }
+
+  function deleteCommunityPickGroup(group: PickGroup) {
+    if (!isPlatformAdmin) return;
+    const groupIds = new Set(group.picks.map((pick) => pick.id));
+    setPicks((current) => current.filter((pick) => !groupIds.has(pick.id)));
+    setVotes((current) => current.filter((voteItem) => !groupIds.has(voteItem.pickId)));
+    setDailySlip((current) => ({ ...current, pickIds: current.pickIds.filter((pickId) => !groupIds.has(pickId)) }));
+    setSlipHistory((current) => current.map((slip) => ({ ...slip, pickIds: slip.pickIds.filter((pickId) => !groupIds.has(pickId)) })));
+    setLocalPickOverrides((current) => {
+      const next = { ...current };
+      groupIds.forEach((id) => {
+        next[id] = null;
+      });
+      return next;
+    });
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void Promise.all(group.picks.map((pick) => deletePick(pick.id)))
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to delete community picks", error);
           setSyncStatus("error");
         });
     }
@@ -1592,6 +1654,21 @@ export function App() {
           <span>@{pick.odds.toFixed(2)}</span>
           <span>{roundUnits(group.picks.reduce((total, groupPick) => total + groupPick.stake, 0))}u sugeridas</span>
         </div>
+        {isPlatformAdmin ? (
+          <div className="community-admin-actions">
+            <label className="settlement-odd-field">
+              Odd
+              <input
+                type="number"
+                step="0.01"
+                min="1.01"
+                value={pick.odds}
+                onChange={(event) => updateCommunityGroupOdds(group, Number(event.target.value))}
+              />
+            </label>
+            <button className="danger-action" onClick={() => deleteCommunityPickGroup(group)}>Eliminar</button>
+          </div>
+        ) : null}
         <div className="vote-row">
           <button onClick={() => castGroupVote(group, "trust")} disabled={!canVote}>
             <ThumbsUp size={16} />
