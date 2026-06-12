@@ -2027,11 +2027,12 @@ export function App() {
         <HistoryPage
           user={activeUser}
           isStreamer={isStreamer}
+          canEditOdds={isStreamer || isPlatformAdmin}
           allPicks={picks}
           matches={matches}
           slipHistory={slipHistory}
           votes={votes}
-          onUpdateOdd={isStreamer ? updateSlipPickOdds : undefined}
+          onUpdateOdd={isStreamer || isPlatformAdmin ? updateSlipPickOdds : undefined}
         />
       ) : null}
 
@@ -2636,6 +2637,7 @@ function AdminClassifyPage({
 function HistoryPage({
   user,
   isStreamer,
+  canEditOdds,
   allPicks,
   matches,
   slipHistory,
@@ -2644,6 +2646,7 @@ function HistoryPage({
 }: {
   user: User;
   isStreamer: boolean;
+  canEditOdds: boolean;
   allPicks: Pick[];
   matches: Match[];
   slipHistory: SlipHistoryItem[];
@@ -2681,7 +2684,7 @@ function HistoryPage({
               <div>
                 <strong>{pick.selection}</strong>
                 <small>{author.displayName} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
-                {isStreamer && onUpdateOdd ? (
+                {canEditOdds && onUpdateOdd ? (
                   <label className="settlement-odd-field">
                     Odd final
                     <input
