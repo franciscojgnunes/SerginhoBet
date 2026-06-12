@@ -1150,6 +1150,66 @@ h1 {
   margin-top: 8px;
 }
 
+.admin-page {
+  animation: fade-slide 260ms var(--ease-out) both;
+}
+
+.admin-toolbar {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 1fr) 190px;
+  margin-bottom: 14px;
+}
+
+.admin-toolbar select,
+.admin-pick-row select {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  min-height: 42px;
+  outline: none;
+  padding: 0.65rem 0.75rem;
+}
+
+.admin-pick-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-pick-row {
+  align-items: center;
+  animation: card-rise 300ms var(--ease-out) both;
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(150px, 0.75fr) minmax(220px, 0.9fr) minmax(240px, 1.2fr) 110px 160px;
+  padding: 12px;
+}
+
+.admin-pick-main strong {
+  color: var(--text);
+}
+
+.admin-pick-main small,
+.admin-pick-main p,
+.admin-pick-row .author span {
+  color: var(--muted);
+}
+
+.admin-pick-main p {
+  margin: 4px 0 0;
+}
+
+.admin-pick-result {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
 .viewer-history-row {
   align-items: center;
   display: grid;
@@ -3179,6 +3239,15 @@ h1 {
 
   .resolve-row {
     grid-template-columns: 1fr;
+  }
+
+  .admin-toolbar,
+  .admin-pick-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-pick-result {
+    justify-items: start;
   }
 
   .resolve-slip-footer {

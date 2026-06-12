@@ -20,7 +20,6 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { users } from "./data";
 import {
   buildMatchSlate,
-  buildProfitTimeline,
   calculateBankroll,
   calculateDailyStats,
   calculateProfit,
@@ -34,7 +33,7 @@ import {
 import { fetchMatchesForDates } from "./sportsApi";
 import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickStake, updateProfileAvatar } from "./supabaseData";
+import { ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickSettlement, updatePickStake, updateProfileAvatar } from "./supabaseData";
 import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -44,14 +43,15 @@ const tomorrowDay = getLocalDateKey(tomorrowDate);
 const communityInitialBankroll = 100;
 const fixedViewerStake = 1;
 const communityRetentionDays = 3;
+const statsResetAt = "2026-06-11T15:45:00.000Z";
 const hasApiFootballKey = Boolean(import.meta.env.VITE_API_FOOTBALL_KEY);
 const matchDates = [tipDay, tomorrowDay];
 const communityDayKeys = Array.from({ length: communityRetentionDays + 1 }, (_, index) => {
   const date = new Date(currentDate.getTime() + (1 - index) * 24 * 60 * 60 * 1000);
   return getLocalDateKey(date);
 });
+const statsDayKeys = buildDateKeysBetween(new Date(statsResetAt), tomorrowDate);
 const cacheNamespace = "serginhobet:clean-20260611";
-const statsResetAt = "2026-06-11T15:45:00.000Z";
 const matchesCacheKey = `${cacheNamespace}:matches:${tipDay}:${tomorrowDay}:${hasApiFootballKey ? "api-football-only-v9-worldcup" : "api-football-server-v9-worldcup"}`;
 const picksCacheKey = `${cacheNamespace}:picks:${tipDay}`;
 const votesCacheKey = `${cacheNamespace}:votes:${tipDay}`;
@@ -159,7 +159,7 @@ function findAvailableOdd(matchOdds: MatchOdd[] | undefined, marketType: MarketT
   return getAvailableOddsForMarket(matchOdds, marketType).find((odd) => odd.selection === selection);
 }
 
-type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile";
+type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile" | "admin";
 type StatsScope = ReturnType<typeof buildStatsScope>;
 type SyncStatus = "idle" | "loading" | "ready" | "saving" | "error";
 type PickGroup = {
@@ -372,6 +372,19 @@ function formatCommunityDayLabel(day: string) {
   }).format(new Date(`${day}T12:00:00Z`));
 }
 
+function buildDateKeysBetween(start: Date, end: Date) {
+  const keys: string[] = [];
+  const cursor = new Date(start);
+  cursor.setHours(12, 0, 0, 0);
+  const last = new Date(end);
+  last.setHours(12, 0, 0, 0);
+  while (cursor.getTime() <= last.getTime()) {
+    keys.push(getLocalDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return Array.from(new Set(keys));
+}
+
 function normalizeFilterText(value: string) {
   return value
     .normalize("NFD")
@@ -446,15 +459,18 @@ function buildStatsScope(label: string, picks: Pick[], slips: SlipHistoryItem[],
   const scopeSlips = slips.filter((slip) => filter(slip.publishedAt));
   const selectedIds = new Set(scopeSlips.flatMap((slip) => slip.pickIds));
   const settledSlips = scopeSlips.filter((slip) => slip.settlementStatus !== "pending");
-  const staked = roundUnits(settledSlips.reduce((total, slip) => total + (slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length), 0));
-  const profit = roundUnits(settledSlips.reduce((total, slip) => total + slip.profit, 0));
+  const settledStandalonePicks = scopePicks.filter((pick) => pick.status !== "pending" && !selectedIds.has(pick.id));
+  const slipStake = settledSlips.reduce((total, slip) => total + (slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length), 0);
+  const standaloneStake = settledStandalonePicks.reduce((total, pick) => total + pick.stake, 0);
+  const staked = roundUnits(slipStake + standaloneStake);
+  const profit = roundUnits(settledSlips.reduce((total, slip) => total + slip.profit, 0) + settledStandalonePicks.reduce((total, pick) => total + pick.profit, 0));
 
   return {
     label,
     total: {
       submitted: scopePicks.length,
       selected: selectedIds.size,
-      settled: settledSlips.length,
+      settled: settledSlips.length + settledStandalonePicks.length,
       pendingSelected: scopeSlips.filter((slip) => slip.settlementStatus === "pending").reduce((total, slip) => total + slip.pickIds.length, 0),
       staked,
       profit,
@@ -466,6 +482,7 @@ function buildStatsScope(label: string, picks: Pick[], slips: SlipHistoryItem[],
       let settled = 0;
       let viewerStake = 0;
       let viewerProfit = 0;
+      const settledStandaloneByUser = scopePicks.filter((pick) => pick.userId === user.id && pick.status !== "pending" && !selectedIds.has(pick.id));
 
       for (const slip of settledSlips) {
         const slipPicks = slip.pickIds.map((pickId) => picks.find((pick) => pick.id === pickId)).filter((pick): pick is Pick => Boolean(pick));
@@ -476,6 +493,10 @@ function buildStatsScope(label: string, picks: Pick[], slips: SlipHistoryItem[],
         viewerStake += (slipStake / slipPicks.length) * viewerPickCount;
         viewerProfit += (slip.profit / slipPicks.length) * viewerPickCount;
       }
+
+      settled += settledStandaloneByUser.length;
+      viewerStake += settledStandaloneByUser.reduce((total, pick) => total + pick.stake, 0);
+      viewerProfit += settledStandaloneByUser.reduce((total, pick) => total + pick.profit, 0);
 
       const roundedStake = roundUnits(viewerStake);
       const roundedProfit = roundUnits(viewerProfit);
@@ -503,6 +524,27 @@ function buildSlipTimeline(slips: SlipHistoryItem[], filter: (value: string) => 
       return {
         label: new Date(slip.publishedAt).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" }),
         profit: slip.profit,
+        cumulative
+      };
+    });
+}
+
+function buildResultTimeline(picks: Pick[], slips: SlipHistoryItem[], filter: (value: string) => boolean) {
+  const selectedIds = new Set(slips.flatMap((slip) => slip.pickIds));
+  const slipEvents = slips
+    .filter((slip) => slip.settlementStatus !== "pending" && filter(slip.publishedAt))
+    .map((slip) => ({ date: slip.publishedAt, profit: slip.profit }));
+  const standaloneEvents = picks
+    .filter((pick) => pick.status !== "pending" && !selectedIds.has(pick.id) && filter(pick.createdAt))
+    .map((pick) => ({ date: pick.createdAt, profit: pick.profit }));
+  let cumulative = 0;
+  return [...slipEvents, ...standaloneEvents]
+    .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())
+    .map((event) => {
+      cumulative = roundUnits(cumulative + event.profit);
+      return {
+        label: new Date(event.date).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" }),
+        profit: event.profit,
         cumulative
       };
     });
@@ -746,7 +788,7 @@ export function App() {
       inFlight = true;
       if (showLoading) setSyncStatus("loading");
       try {
-        const remote = await loadRemoteState(tipDay, defaultLeagueCode, matchDates, communityDayKeys);
+        const remote = await loadRemoteState(tipDay, defaultLeagueCode, matchDates, statsDayKeys);
         if (!mounted) return;
         setRemoteProfiles(remote.profiles);
         setActiveLeague(remote.league ?? null);
@@ -865,6 +907,7 @@ export function App() {
   const remoteActiveProfile = remoteProfiles.find((profile) => profile.id === activeUserId);
   const activeUser = remoteActiveProfile ?? authProfile ?? userById(activeUserId);
   const isStreamer = activeUser.role === "streamer";
+  const isPlatformAdmin = normalizeFilterText(activeUser.displayName) === "francisconunes1";
   const scheduledMatches = useMemo(() => filterUpcomingScheduledMatches(keepApiFootballMatches(matches)), [matches]);
   const competitionOptions = useMemo(
     () => [
@@ -1003,8 +1046,6 @@ export function App() {
           : 0
       }
     : { ...baseBankroll, exposure: slipExposure };
-  const dailyStats = calculateDailyStats(picks, dailySlip.pickIds, tipDay);
-  const profitTimeline = buildProfitTimeline(picks, dailySlip.pickIds);
   const allStoredPicks = useMemo(
     () => mergeById([...readStoredCollections<Pick>(`${cacheNamespace}:picks:`), ...picks]).map(normalizePickStake),
     [picks]
@@ -1024,47 +1065,20 @@ export function App() {
     () => buildStatsScope("Geral", allStoredPicks, allStoredSlips, () => true),
     [allStoredPicks, allStoredSlips]
   );
+  const dayProfitTimeline = useMemo(
+    () => buildResultTimeline(allStoredPicks, allStoredSlips, (value) => value.slice(0, 10) === tipDay),
+    [allStoredPicks, allStoredSlips]
+  );
   const monthProfitTimeline = useMemo(
-    () => buildSlipTimeline(allStoredSlips, (value) => value.slice(0, 7) === monthKey),
-    [allStoredSlips, monthKey]
+    () => buildResultTimeline(allStoredPicks, allStoredSlips, (value) => value.slice(0, 7) === monthKey),
+    [allStoredPicks, allStoredSlips, monthKey]
   );
   const allTimeProfitTimeline = useMemo(
-    () => buildSlipTimeline(allStoredSlips, () => true),
-    [allStoredSlips]
+    () => buildResultTimeline(allStoredPicks, allStoredSlips, () => true),
+    [allStoredPicks, allStoredSlips]
   );
-  const displayedDailyStats = dailySlip.mode === "combined" && dailySlip.status === "published"
-    ? {
-        ...dailyStats,
-        total: {
-          ...dailyStats.total,
-          settled: dailySlip.settlementStatus === "pending" ? 0 : 1,
-          pendingSelected: dailySlip.settlementStatus === "pending" ? topSlipPicks.length : 0,
-          staked: dailySlip.settlementStatus === "pending" ? 0 : dailySlip.combinedStake,
-          profit: dailySlip.settlementStatus === "pending" ? 0 : dailySlip.profit,
-          roi: dailySlip.settlementStatus !== "pending" && dailySlip.combinedStake > 0
-            ? roundUnits((dailySlip.profit / dailySlip.combinedStake) * 100)
-            : 0
-        },
-        byViewer: dailyStats.byViewer.map((row) => {
-          const selectedByViewer = topSlipPicks.filter((pick) => pick.userId === row.userId).length;
-          if (selectedByViewer === 0) return row;
-          const stakeShare = dailySlip.settlementStatus === "pending" ? 0 : roundUnits((dailySlip.combinedStake / topSlipPicks.length) * selectedByViewer);
-          const profitShare = dailySlip.settlementStatus === "pending" ? 0 : roundUnits((dailySlip.profit / topSlipPicks.length) * selectedByViewer);
-          return {
-            ...row,
-            settled: dailySlip.settlementStatus === "pending" ? 0 : selectedByViewer,
-            pendingSelected: dailySlip.settlementStatus === "pending" ? selectedByViewer : 0,
-            staked: stakeShare,
-            profit: profitShare,
-            roi: stakeShare > 0 ? roundUnits((profitShare / stakeShare) * 100) : 0
-          };
-        })
-      }
-    : dailyStats;
-  const displayedProfitTimeline = dailySlip.mode === "combined" && dailySlip.status === "published" && dailySlip.settlementStatus !== "pending"
-    ? [{ label: "Boletim", profit: dailySlip.profit, cumulative: dailySlip.profit }]
-    : profitTimeline;
-  const displayedDayScope = { ...dayScope, total: displayedDailyStats.total, byViewer: displayedDailyStats.byViewer };
+  const displayedProfitTimeline = dayProfitTimeline;
+  const displayedDayScope = dayScope;
 
   useEffect(() => {
     if (!isLoggedIn || isStreamer || dailySlip.status !== "published" || topSlipPicks.length === 0) return;
@@ -1428,6 +1442,27 @@ export function App() {
     }
   }
 
+  function settleStandalonePick(pickId: string, status: PickStatus) {
+    if (!isPlatformAdmin) return;
+    const targetPick = picks.find((pick) => pick.id === pickId);
+    if (!targetPick) return;
+    const profit = calculateProfit(status, fixedViewerStake, targetPick.odds);
+    const nextPick = { ...targetPick, stake: fixedViewerStake, status, profit };
+    setPicks((current) => current.map((pick) => pick.id === pickId ? nextPick : pick));
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void Promise.all([
+        updatePickSettlement(pickId, status, profit),
+        targetPick.stake !== fixedViewerStake ? updatePickStake(pickId, fixedViewerStake) : Promise.resolve()
+      ])
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to classify pick", error);
+          setSyncStatus("error");
+        });
+    }
+  }
+
   function confirmPendingSettlement() {
     if (!pendingSettlement) return;
     if (pendingSettlement.kind === "combined") {
@@ -1631,6 +1666,7 @@ export function App() {
             <button className={activePage === "community" ? "active" : ""} onClick={() => setActivePage("community")}>Comunidade</button>
             {!isStreamer ? <button className={activePage === "viewer" ? "active" : ""} onClick={() => setActivePage("viewer")}>Minhas apostas</button> : null}
             {isStreamer ? <button className={activePage === "resolve" ? "active" : ""} onClick={() => setActivePage("resolve")}>Resolver</button> : null}
+            {isPlatformAdmin ? <button className={activePage === "admin" ? "active" : ""} onClick={() => setActivePage("admin")}>Admin</button> : null}
             <button className={activePage === "history" ? "active" : ""} onClick={() => setActivePage("history")}>Histórico</button>
             <button className={activePage === "stats" ? "active" : ""} onClick={() => setActivePage("stats")}>Estatísticas</button>
           </div>
@@ -1911,6 +1947,16 @@ export function App() {
           slipHistory={slipHistory}
           votes={votes}
           onUpdateOdd={isStreamer ? updateSlipPickOdds : undefined}
+        />
+      ) : null}
+
+      {activePage === "admin" && isPlatformAdmin ? (
+        <AdminClassifyPage
+          picks={picks}
+          matches={matches}
+          slipHistory={slipHistory}
+          votes={votes}
+          onSettlePick={settleStandalonePick}
         />
       ) : null}
 
@@ -2397,6 +2443,107 @@ function ViewerBetsPage({
           {resolvedPicks.length === 0 && slipHistory.length === 0 ? <p className="empty-copy">O historico fechado aparece aqui depois das tips serem resolvidas.</p> : null}
         </div>
       </section> : null}
+    </section>
+  );
+}
+
+function AdminClassifyPage({
+  picks,
+  matches,
+  slipHistory,
+  votes,
+  onSettlePick
+}: {
+  picks: Pick[];
+  matches: Match[];
+  slipHistory: SlipHistoryItem[];
+  votes: VoteRecord[];
+  onSettlePick: (pickId: string, status: PickStatus) => void;
+}) {
+  const [statusFilter, setStatusFilter] = useState<"all" | PickStatus>("pending");
+  const [search, setSearch] = useState("");
+  const finalPickIds = new Set(slipHistory.flatMap((slip) => slip.pickIds));
+  const normalizedSearch = normalizeFilterText(search);
+  const filteredPicks = [...picks]
+    .filter((pick) => statusFilter === "all" || pick.status === statusFilter)
+    .filter((pick) => {
+      if (!normalizedSearch) return true;
+      const match = matches.find((item) => item.id === pick.matchId);
+      const author = userById(pick.userId);
+      const text = normalizeFilterText(`${pick.selection} ${pick.marketType} ${author.displayName} ${match?.homeTeam ?? ""} ${match?.awayTeam ?? ""} ${match?.competition ?? ""}`);
+      return text.includes(normalizedSearch);
+    })
+    .sort((left, right) => {
+      if (left.status === "pending" && right.status !== "pending") return -1;
+      if (left.status !== "pending" && right.status === "pending") return 1;
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+    });
+  const settledCount = picks.filter((pick) => pick.status !== "pending").length;
+
+  return (
+    <section className="admin-page">
+      <section className="panel admin-panel">
+        <div className="section-title spread">
+          <div><ShieldCheck size={18} /><h3>Painel admin</h3></div>
+          <span>{settledCount}/{picks.length} classificadas</span>
+        </div>
+        <div className="admin-toolbar">
+          <label className="match-search-field">
+            <span>Pesquisar</span>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Viewer, equipa, jogo ou tip"
+            />
+          </label>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | PickStatus)}>
+            <option value="pending">Pendentes</option>
+            <option value="all">Todas</option>
+            <option value="won">Ganhas</option>
+            <option value="lost">Perdidas</option>
+            <option value="void">Void</option>
+            <option value="half_won">Meia ganha</option>
+            <option value="half_lost">Meia perdida</option>
+          </select>
+        </div>
+        <div className="admin-pick-list">
+          {filteredPicks.map((pick) => {
+            const match = matches.find((item) => item.id === pick.matchId);
+            const author = userById(pick.userId);
+            const profit = calculateProfit(pick.status, fixedViewerStake, pick.odds);
+            return (
+              <article className="admin-pick-row" key={pick.id}>
+                <div className="author">
+                  <Avatar user={author} />
+                  <div>
+                    <strong>{author.displayName}</strong>
+                    <span>{new Date(pick.createdAt).toLocaleString("pt-PT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
+                </div>
+                <MatchMiniCard match={match} />
+                <div className="admin-pick-main">
+                  <strong>{pick.selection}</strong>
+                  <small>{pick.marketType} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}{finalPickIds.has(pick.id) ? " - Final streamer" : ""}</small>
+                  <p>{pick.reason.trim() || "Sem justificacao."}</p>
+                </div>
+                <div className="admin-pick-result">
+                  <div className={`status ${pick.status}`}>{statusLabel(pick.status)}</div>
+                  <b className={profit < 0 ? "negative-value" : "positive-value"}>{profit >= 0 ? "+" : ""}{profit.toFixed(2)}u</b>
+                </div>
+                <select value={pick.status} onChange={(event) => onSettlePick(pick.id, event.target.value as PickStatus)}>
+                  <option value="pending">Pendente</option>
+                  <option value="won">Ganha</option>
+                  <option value="lost">Perdida</option>
+                  <option value="void">Void</option>
+                  <option value="half_won">Meia ganha</option>
+                  <option value="half_lost">Meia perdida</option>
+                </select>
+              </article>
+            );
+          })}
+          {filteredPicks.length === 0 ? <p className="empty-copy">Nao ha tips para este filtro.</p> : null}
+        </div>
+      </section>
     </section>
   );
 }

@@ -433,6 +433,15 @@ export async function updatePickStake(pickId: string, stake: number) {
   if (error) throw error;
 }
 
+export async function updatePickSettlement(pickId: string, status: PickStatus, profit: number) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("picks")
+    .update({ status, profit })
+    .eq("id", pickId);
+  if (error) throw error;
+}
+
 export async function saveVote(vote: Vote) {
   if (!supabase) return;
   const { error } = await supabase.from("votes").upsert({
