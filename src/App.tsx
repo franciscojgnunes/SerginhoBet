@@ -2387,8 +2387,7 @@ function ViewerBetsPage({
   const resolvedPicks = picks
     .filter((pick) => pick.status !== "pending")
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-  const pendingSlipHistory = slipHistory.filter((item) => item.settlementStatus === "pending");
-  const [showFinalPicks, setShowFinalPicks] = useState(false);
+  const publishedStatusLabel = isPublished ? statusLabel(dailySlip.settlementStatus) : "Ainda nao registada";
   const [expandedSlipIds, setExpandedSlipIds] = useState<Set<string>>(() => new Set());
 
   function toggleExpandedSlip(slipId: string) {
@@ -2438,7 +2437,7 @@ function ViewerBetsPage({
       <section className="panel viewer-slip-panel">
         <div className="section-title spread">
           <div><ShieldCheck size={18} /><h3>Aposta da comunidade</h3></div>
-          <span>{isPublished ? "Registada" : "Ainda nao registada"}</span>
+          <span>{publishedStatusLabel}</span>
         </div>
         <div className={`viewer-slip-state ${isPublished ? "published" : "draft"}`}>
           <strong>{isPublished ? "Boletim publicado pelo SerginhoEsteves" : "O streamer ainda nao publicou a aposta final"}</strong>
@@ -2456,12 +2455,11 @@ function ViewerBetsPage({
         </div>
         <div className="viewer-final-list">
           {isPublished ? (
-            <div className="viewer-final-dropdown">
-              <button className="viewer-final-toggle" onClick={() => setShowFinalPicks((current) => !current)}>
-                <span>{showFinalPicks ? "Esconder jogos do boletim" : "Ver jogos do boletim"}</span>
-                <b>{finalPicks.length}</b>
-              </button>
-              {showFinalPicks ? <div className="viewer-final-expanded">
+            <div className="viewer-final-expanded">
+              <div className="viewer-final-heading">
+                <strong>Jogos do boletim</strong>
+                <span>{finalPicks.length}</span>
+              </div>
                 {finalPicks.map((pick, index) => {
                   const match = matches.find((item) => item.id === pick.matchId);
                   const author = userById(pick.userId);
@@ -2474,7 +2472,6 @@ function ViewerBetsPage({
                     </article>
                   );
                 })}
-              </div> : null}
             </div>
           ) : null}
           {false ? userFinalPicks.map((pick) => {
@@ -2489,30 +2486,6 @@ function ViewerBetsPage({
           }) : null}
           {isPublished && userFinalPicks.length === 0 ? <p className="empty-copy">Nenhuma das tuas tips entrou na aposta final de hoje.</p> : null}
           {!isPublished ? <p className="empty-copy">Aposta ainda por registar. Continua a submeter e votar tips na comunidade.</p> : null}
-        </div>
-      </section>
-
-      <section className="panel viewer-pending-panel">
-        <div className="section-title spread">
-          <div><Activity size={18} /><h3>Pendentes por resolver</h3></div>
-          <span>{pendingSlipHistory.length}</span>
-        </div>
-        <div className="viewer-pending-list">
-          {pendingSlipHistory.map((slip, index) => (
-            <article className="slip-history-card" key={slip.id}>
-              <button className="viewer-pending-row slip-expand-toggle" onClick={() => toggleExpandedSlip(slip.id)}>
-                <div>
-                  <strong>Boletim #{slipHistory.length - index}</strong>
-                  <span>{slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
-                </div>
-                <b>{expandedSlipIds.has(slip.id) ? "Esconder" : `${slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}`}</b>
-              </button>
-              {expandedSlipIds.has(slip.id) ? renderSlipDetailList(slip) : null}
-            </article>
-          ))}
-          {pendingSlipHistory.length === 0 ? (
-            <p className="empty-copy">Nao existem apostas finais pendentes neste momento.</p>
-          ) : null}
         </div>
       </section>
 
