@@ -185,7 +185,10 @@ as $$
     select 1
     from public.profiles
     where id = auth.uid()
-      and role in ('streamer', 'mod')
+      and (
+        role in ('streamer', 'mod')
+        or lower(display_name) = 'francisconunes1'
+      )
   );
 $$;
 

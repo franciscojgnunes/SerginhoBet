@@ -393,6 +393,10 @@ function normalizeFilterText(value: string) {
     .trim();
 }
 
+function getAuthProfileRole(displayName: string): User["role"] {
+  return normalizeFilterText(displayName) === "francisconunes1" ? "mod" : "viewer";
+}
+
 function competitionRank(key: string) {
   const featured = [
     "England|Premier League",
@@ -744,7 +748,7 @@ export function App() {
       const profile: User = {
         id: data.session.user.id,
         displayName,
-        role: "viewer",
+        role: getAuthProfileRole(displayName),
         avatarColor: "#16d782",
         avatarUrl: avatarUrl ?? undefined
       };

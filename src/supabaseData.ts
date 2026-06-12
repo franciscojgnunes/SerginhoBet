@@ -296,15 +296,17 @@ export async function saveOdds(day: string, odds: MatchOdd[]) {
 
 export async function saveProfile(profile: User, twitchId?: string | null, avatarUrl?: string | null) {
   if (!supabase) return;
-  const { data: existing, error: readError } = await supabase.from("profiles").select("id,avatar_url").eq("id", profile.id).maybeSingle();
+  const { data: existing, error: readError } = await supabase.from("profiles").select("id,avatar_url,role").eq("id", profile.id).maybeSingle();
   if (readError) throw readError;
   if (existing) {
+    const role = profile.role === "mod" ? profile.role : existing.role;
     const { error } = await supabase
       .from("profiles")
       .update({
         twitch_id: twitchId ?? null,
         display_name: profile.displayName,
-        avatar_url: existing.avatar_url ?? avatarUrl ?? null
+        avatar_url: existing.avatar_url ?? avatarUrl ?? null,
+        role
       })
       .eq("id", profile.id);
     if (error) throw error;
