@@ -1037,8 +1037,9 @@ export function App() {
   const tipModalOdds = tipModalMatch ? matchOdds.filter((odd) => odd.matchId === tipModalMatch.id) : [];
   const isPickBeforeKickoff = (pick: Pick) => {
     const match = matches.find((item) => item.id === pick.matchId);
-    return !match || new Date(match.startsAt).getTime() > kickoffCheckAt;
+    return Boolean(match) && match?.status === "scheduled" && new Date(match.startsAt).getTime() > kickoffCheckAt;
   };
+  const eligibleSlipPicks = useMemo(() => picks.filter(isPickBeforeKickoff), [kickoffCheckAt, matches, picks]);
   const selectedMatchPicks = selectedMatch ? picks.filter((pick) => pick.matchId === selectedMatch.id && isPickBeforeKickoff(pick)) : [];
   const selectedMatchPickGroups = useMemo(() => buildPickGroups(selectedMatchPicks, votes), [selectedMatchPicks, votes]);
   const communityStartDay = communityDayKeys[communityDayKeys.length - 1];
@@ -1091,7 +1092,10 @@ export function App() {
   }, [communityPickGroups, matches]);
   const topSlipPicks = dailySlip.pickIds
     .map((pickId) => picks.find((pick) => pick.id === pickId))
-    .filter((pick): pick is Pick => Boolean(pick));
+    .filter((pick): pick is Pick => {
+      if (!pick) return false;
+      return dailySlip.status === "published" || isPickBeforeKickoff(pick);
+    });
   const topSlipPickGroups = useMemo(() => buildPickGroups(topSlipPicks, votes), [topSlipPicks, votes]);
   const visibleTopSlipPicks = topSlipPicks.filter(isPickBeforeKickoff);
   const visibleTopSlipPickGroups = useMemo(() => buildPickGroups(visibleTopSlipPicks, votes), [visibleTopSlipPicks, votes]);
@@ -1252,6 +1256,17 @@ export function App() {
   const leaderboard = useMemo(() => buildLeaderboard(monthScope), [monthScope]);
   const generalLeaderboard = useMemo(() => buildLeaderboard(allTimeScope), [allTimeScope]);
 
+  useEffect(() => {
+    if (dailySlip.status !== "draft" || dailySlip.pickIds.length === 0) return;
+    const openPickIds = new Set(eligibleSlipPicks.map((pick) => pick.id));
+    if (dailySlip.pickIds.every((pickId) => openPickIds.has(pickId))) return;
+    setDailySlip((slip) => ({
+      ...slip,
+      pickIds: slip.pickIds.filter((pickId) => openPickIds.has(pickId)),
+      generatedAt: new Date().toISOString()
+    }));
+  }, [dailySlip.pickIds, dailySlip.status, eligibleSlipPicks]);
+
   function submitPick(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const stake = fixedViewerStake;
@@ -1344,7 +1359,7 @@ export function App() {
       status: "draft",
       settlementStatus: "pending",
       profit: 0,
-      pickIds: groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
+      pickIds: groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(eligibleSlipPicks, votes, 4).map((pick) => pick.id),
       generatedAt: new Date().toISOString()
     }));
   }
@@ -1353,7 +1368,16 @@ export function App() {
     const publishedAt = new Date().toISOString();
     const historyId = `slip-${Date.now()}`;
     const groupedPickIds = sortPickGroups(communityPickGroups, "score").slice(0, 4).flatMap((group) => group.picks.map((pick) => pick.id));
-    const pickIds = dailySlip.pickIds.length > 0 ? dailySlip.pickIds : groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id);
+    const openPickIds = new Set(eligibleSlipPicks.map((pick) => pick.id));
+    const draftPickIds = dailySlip.pickIds.filter((pickId) => openPickIds.has(pickId));
+    const pickIds = draftPickIds.length > 0 ? draftPickIds : groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(eligibleSlipPicks, votes, 4).map((pick) => pick.id);
+    if (pickIds.length === 0) {
+      setPopup({
+        title: "Sem picks validas",
+        body: "Nao podes publicar picks de jogos que ja comecaram ou terminaram. Escolhe jogos ainda agendados."
+      });
+      return;
+    }
     const allInStake = Math.max(0, settledBankroll);
     const nextSlip: DailySlip = {
       ...dailySlip,
@@ -1384,6 +1408,8 @@ export function App() {
   }
 
   function toggleFinalPick(pickId: string) {
+    const pick = picks.find((item) => item.id === pickId);
+    if (!pick || !isPickBeforeKickoff(pick)) return;
     setDailySlip((slip) => {
       const exists = slip.pickIds.includes(pickId);
       return {
@@ -1398,7 +1424,8 @@ export function App() {
   }
 
   function toggleFinalPickGroup(group: PickGroup) {
-    const groupIds = group.picks.map((pick) => pick.id);
+    const groupIds = group.picks.filter(isPickBeforeKickoff).map((pick) => pick.id);
+    if (groupIds.length === 0) return;
     setDailySlip((slip) => {
       const allSelected = groupIds.every((id) => slip.pickIds.includes(id));
       const nextIds = allSelected
