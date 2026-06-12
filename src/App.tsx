@@ -2217,9 +2217,6 @@ function ViewerBetsPage({
   const userRoi = userStake > 0 ? roundUnits((userProfit / userStake) * 100) : 0;
   const slipModeLabel = dailySlip.mode === "combined" ? "Combinada" : "Multiplas";
   const slipStake = dailySlip.mode === "combined" ? dailySlip.combinedStake : multiplesStake;
-  const pendingPicks = picks
-    .filter((pick) => pick.status === "pending")
-    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   const resolvedPicks = picks
     .filter((pick) => pick.status !== "pending")
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
@@ -2331,7 +2328,7 @@ function ViewerBetsPage({
       <section className="panel viewer-pending-panel">
         <div className="section-title spread">
           <div><Activity size={18} /><h3>Pendentes por resolver</h3></div>
-          <span>{pendingPicks.length + pendingSlipHistory.length}</span>
+          <span>{pendingSlipHistory.length}</span>
         </div>
         <div className="viewer-pending-list">
           {pendingSlipHistory.map((slip, index) => (
@@ -2346,20 +2343,8 @@ function ViewerBetsPage({
               {expandedSlipIds.has(slip.id) ? renderSlipDetailList(slip) : null}
             </article>
           ))}
-          {pendingPicks.map((pick) => {
-            const match = matches.find((item) => item.id === pick.matchId);
-            return (
-              <article className="viewer-pending-row" key={pick.id}>
-                <div>
-                  <strong>{pick.selection}</strong>
-                  <MatchMiniCard match={match} />
-                </div>
-                <b>@{pick.odds.toFixed(2)}</b>
-              </article>
-            );
-          })}
-          {pendingPicks.length === 0 && pendingSlipHistory.length === 0 ? (
-            <p className="empty-copy">Nao tens tips nem boletins pendentes neste momento.</p>
+          {pendingSlipHistory.length === 0 ? (
+            <p className="empty-copy">Nao existem apostas finais pendentes neste momento.</p>
           ) : null}
         </div>
       </section>
