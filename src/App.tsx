@@ -2860,11 +2860,11 @@ function HistoryPage({
   onUpdateOdd?: (slipId: string, pickId: string, odds: number) => void;
 }) {
   const [expandedSlipIds, setExpandedSlipIds] = useState<Set<string>>(() => new Set());
-  const visiblePicks = isStreamer ? allPicks : allPicks.filter((pick) => pick.userId === user.id);
+  const visiblePicks = allPicks.filter((pick) => pick.userId === user.id);
   const resolvedPicks = visiblePicks
     .filter((pick) => pick.status !== "pending")
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-  const personalPickRows = [...allPicks]
+  const personalPickRows = [...visiblePicks]
     .filter((pick) => pick.status !== "pending")
     .sort((left, right) => {
       const authorDelta = userById(left.userId).displayName.localeCompare(userById(right.userId).displayName, "pt");
