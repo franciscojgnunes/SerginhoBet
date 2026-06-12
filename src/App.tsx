@@ -660,11 +660,13 @@ export function App() {
   ));
   const [picks, setPicks] = useState<Pick[]>(() => readStoredValue<Pick[]>(picksCacheKey, []).map(normalizePickStake));
   const [localPickOverrides, setLocalPickOverrides] = useState<Record<string, Partial<Pick> | null>>({});
+  const localPickOverridesRef = useRef(localPickOverrides);
   const [votes, setVotes] = useState<VoteRecord[]>(() => readStoredValue<VoteRecord[]>(votesCacheKey, []));
   const [matchOdds, setMatchOdds] = useState<MatchOdd[]>(() => readStoredValue<MatchOdd[]>(oddsCacheKey, []));
   const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
   const [slipHistory, setSlipHistory] = useState<SlipHistoryItem[]>(() => readStoredValue<SlipHistoryItem[]>(slipHistoryCacheKey, []));
   const [localSlipOverrides, setLocalSlipOverrides] = useState<Record<string, Partial<SlipHistoryItem>>>({});
+  const localSlipOverridesRef = useRef(localSlipOverrides);
   const [popup, setPopup] = useState<{ title: string; body: string } | null>(null);
   const [pendingSettlement, setPendingSettlement] = useState<
     | { kind: "combined"; slipId: string; status: PickStatus }
@@ -704,6 +706,12 @@ export function App() {
     matchesRef.current = matches;
   }, [matches]);
   useEffect(() => writeStoredValue(picksCacheKey, picks), [picks]);
+  useEffect(() => {
+    localPickOverridesRef.current = localPickOverrides;
+  }, [localPickOverrides]);
+  useEffect(() => {
+    localSlipOverridesRef.current = localSlipOverrides;
+  }, [localSlipOverrides]);
   useEffect(() => writeStoredValue(votesCacheKey, votes), [votes]);
   useEffect(() => writeStoredValue(oddsCacheKey, matchOdds), [matchOdds]);
   useEffect(() => writeStoredValue(slipCacheKey, dailySlip), [dailySlip]);
@@ -804,13 +812,15 @@ export function App() {
           requestAutomaticMatchRefresh(filterUpcomingScheduledMatches(mergedRemoteMatches));
           setMatchSync("live");
         }
+        const pickOverrides = localPickOverridesRef.current;
+        const slipOverrides = localSlipOverridesRef.current;
         const resetPicks = remote.picks
           .filter((pick) => isAfterStatsReset(pick.createdAt))
           .map((pick) => {
-            const override = localPickOverrides[pick.id];
+            const override = pickOverrides[pick.id];
             return override ? { ...pick, ...override } : pick;
           })
-          .filter((pick) => localPickOverrides[pick.id] !== null);
+          .filter((pick) => pickOverrides[pick.id] !== null);
         const oldStakePicks = resetPicks.filter((pick) => pick.stake !== fixedViewerStake);
         const normalizedRemotePicks = resetPicks.map(normalizePickStake);
         setPicks(normalizedRemotePicks);
@@ -831,7 +841,7 @@ export function App() {
           .filter((slip) => isAfterStatsReset(slip.publishedAt))
           .map((slip) => {
             const recalculated = slip.settlementStatus === "pending" ? slip : recalculateSlip(slip, normalizedRemotePicks, remote.votes).slip;
-            const override = localSlipOverrides[slip.id];
+            const override = slipOverrides[slip.id];
             return override ? { ...recalculated, ...override } : recalculated;
           });
         setSlipHistory(normalizedSlipHistory);
@@ -853,7 +863,7 @@ export function App() {
       mounted = false;
       window.clearInterval(refreshTimer);
     };
-  }, [authProfile, isLoggedIn, isOverlayRoute, localPickOverrides, localSlipOverrides]);
+  }, [authProfile, isLoggedIn, isOverlayRoute]);
 
   useEffect(() => {
     document.body.classList.toggle("overlay-body", isOverlayRoute);
@@ -1392,8 +1402,18 @@ export function App() {
     recalculatedSlipPicks = recalculated.picks;
     const recalculatedPickMap = new Map(recalculatedSlipPicks.map((pick) => [pick.id, pick]));
     const nextPicksWithProfit = nextPicks.map((pick) => recalculatedPickMap.get(pick.id) ?? pick);
+    const nextPickOverrides: Record<string, Partial<Pick>> = {};
+    for (const pick of nextPicksWithProfit) {
+      if (!affectedIds.has(pick.id)) continue;
+      nextPickOverrides[pick.id] = {
+        odds: pick.odds,
+        profit: pick.profit,
+        bookmaker: pick.bookmaker
+      };
+    }
 
     setPicks(nextPicksWithProfit);
+    setLocalPickOverrides((current) => ({ ...current, ...nextPickOverrides }));
     setSlipHistory((current) => current.map((item) => (item.id === slipId && recalculatedSlip ? recalculatedSlip : item)));
     if (recalculatedSlip) {
       setLocalSlipOverrides((current) => ({
@@ -1406,10 +1426,8 @@ export function App() {
     }
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
-      void Promise.all([
-        ...Array.from(affectedIds).map((id) => updatePickOdds(id, value)),
-        recalculatedSlip ? saveSettlement(recalculatedSlip, recalculatedSlipPicks) : Promise.resolve()
-      ])
+      void Promise.all(Array.from(affectedIds).map((id) => updatePickOdds(id, value)))
+        .then(() => recalculatedSlip ? saveSettlement(recalculatedSlip, recalculatedSlipPicks) : Promise.resolve())
         .then(() => setSyncStatus("ready"))
         .catch((error) => {
           console.error("Failed to update slip odds", error);
