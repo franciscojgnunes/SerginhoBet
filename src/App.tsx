@@ -40,7 +40,7 @@ const currentDate = new Date();
 const tipDay = getLocalDateKey(currentDate);
 const tomorrowDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000);
 const tomorrowDay = getLocalDateKey(tomorrowDate);
-const communityInitialBankroll = 100;
+const communityInitialBankroll = 10;
 const fixedViewerStake = 1;
 const communityRetentionDays = 3;
 const statsResetAt = "2026-06-11T15:45:00.000Z";
@@ -1100,22 +1100,7 @@ export function App() {
   const multiplesStake = topSlipPickGroups.length * dailySlip.multiplesStake;
   const visibleMultiplesStake = visibleTopSlipPickGroups.length * dailySlip.multiplesStake;
   const isPublishedSlip = dailySlip.status === "published" && topSlipPicks.length > 0;
-  const combinedSlipSettled = dailySlip.mode === "combined" && dailySlip.settlementStatus !== "pending";
-  const slipExposure = isPublishedSlip && !combinedSlipSettled
-    ? dailySlip.mode === "combined" ? dailySlip.combinedStake : multiplesStake
-    : 0;
-  const baseBankroll = calculateBankroll(communityInitialBankroll, picks, dailySlip.pickIds);
-  const communityBankroll = dailySlip.mode === "combined"
-    ? {
-        initial: communityInitialBankroll,
-        current: roundUnits(communityInitialBankroll + dailySlip.profit),
-        exposure: slipExposure,
-        settledProfit: dailySlip.settlementStatus === "pending" ? 0 : dailySlip.profit,
-        roi: dailySlip.settlementStatus !== "pending" && dailySlip.combinedStake > 0
-          ? roundUnits((dailySlip.profit / dailySlip.combinedStake) * 100)
-          : 0
-      }
-    : { ...baseBankroll, exposure: slipExposure };
+  const slipSettled = dailySlip.settlementStatus !== "pending";
   const allStoredPicks = useMemo(
     () => mergeById([...readStoredCollections<Pick>(`${cacheNamespace}:picks:`), ...picks]).map(normalizePickStake),
     [picks]
@@ -1135,6 +1120,17 @@ export function App() {
     () => buildStatsScope("Geral", allStoredPicks, allStoredSlips, () => true),
     [allStoredPicks, allStoredSlips]
   );
+  const settledBankroll = roundUnits(communityInitialBankroll + allTimeScope.total.profit);
+  const slipExposure = isPublishedSlip && !slipSettled ? settledBankroll : 0;
+  const communityBankroll = {
+    initial: communityInitialBankroll,
+    current: settledBankroll,
+    exposure: slipExposure,
+    settledProfit: allTimeScope.total.profit,
+    roi: allTimeScope.total.roi
+  };
+  const allInStakePreview = Math.max(0, settledBankroll);
+  const allInMultiplesUnitStake = visibleTopSlipPickGroups.length > 0 ? roundUnits(allInStakePreview / visibleTopSlipPickGroups.length) : allInStakePreview;
   const dayProfitTimeline = useMemo(
     () => buildResultTimeline(allStoredPicks, allStoredSlips, (value) => value.slice(0, 10) === tipDay),
     [allStoredPicks, allStoredSlips]
@@ -1342,12 +1338,16 @@ export function App() {
     const publishedAt = new Date().toISOString();
     const historyId = `slip-${Date.now()}`;
     const groupedPickIds = communityPickGroups.slice(0, 4).flatMap((group) => group.picks.map((pick) => pick.id));
+    const pickIds = dailySlip.pickIds.length > 0 ? dailySlip.pickIds : groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id);
+    const allInStake = Math.max(0, settledBankroll);
     const nextSlip: DailySlip = {
       ...dailySlip,
       status: "published",
       settlementStatus: "pending",
       profit: 0,
-      pickIds: dailySlip.pickIds.length > 0 ? dailySlip.pickIds : groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id),
+      combinedStake: dailySlip.mode === "combined" ? allInStake : dailySlip.combinedStake,
+      multiplesStake: dailySlip.mode === "multiples" && pickIds.length > 0 ? roundUnits(allInStake / pickIds.length) : dailySlip.multiplesStake,
+      pickIds,
       generatedAt: publishedAt
     };
     const historySlip = { ...nextSlip, id: historyId, publishedAt };
@@ -2008,13 +2008,13 @@ export function App() {
                 </div>
                 {dailySlip.mode === "combined" ? (
                   <label className="combined-stake-field">
-                    Stake da combinada
+                    Stake da combinada (all-in)
                     <input
                       type="number"
                       min="0.5"
                       step="0.5"
-                      value={dailySlip.combinedStake}
-                      onChange={(event) => setCombinedStake(Number(event.target.value))}
+                      value={allInStakePreview}
+                      readOnly
                     />
                   </label>
                 ) : (
@@ -2024,8 +2024,8 @@ export function App() {
                       type="number"
                       min="0.5"
                       step="0.5"
-                      value={dailySlip.multiplesStake}
-                      onChange={(event) => setMultiplesStake(Number(event.target.value))}
+                      value={allInMultiplesUnitStake}
+                      readOnly
                     />
                   </label>
                 )}
@@ -2054,9 +2054,9 @@ export function App() {
                 picks={visibleTopSlipPickGroups.map((group) => group.representative)}
                 matches={matches}
                 combinedOdds={visibleCombinedOdds}
-                combinedStake={dailySlip.combinedStake}
-                multiplesUnitStake={dailySlip.multiplesStake}
-                multiplesStake={visibleMultiplesStake}
+                combinedStake={isPublishedSlip ? dailySlip.combinedStake : allInStakePreview}
+                multiplesUnitStake={isPublishedSlip ? dailySlip.multiplesStake : allInMultiplesUnitStake}
+                multiplesStake={isPublishedSlip ? visibleMultiplesStake : allInStakePreview}
                 mode={dailySlip.mode}
                 status={dailySlip.status}
               />
