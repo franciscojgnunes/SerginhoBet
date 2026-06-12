@@ -986,6 +986,29 @@ h1 {
   padding: 0 0.75rem;
 }
 
+.community-sort-toggle {
+  align-items: stretch;
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(86px, 1fr));
+  min-height: 38px;
+  overflow: hidden;
+}
+
+.community-sort-toggle button {
+  border: 0;
+  border-radius: 0;
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.community-sort-toggle button.active {
+  background: var(--lime);
+  color: #06130d;
+}
+
 .stats-page {
   animation: page-enter 320ms var(--ease-out) both;
   display: grid;
@@ -2208,6 +2231,13 @@ h1 {
   min-height: 36px;
 }
 
+.vote-row button.selected {
+  background: rgba(183, 255, 52, 0.18);
+  border-color: var(--lime);
+  box-shadow: 0 0 0 1px rgba(183, 255, 52, 0.22);
+  color: var(--lime);
+}
+
 .vote-row .streamer-action {
   background: rgba(183, 255, 52, 0.12);
   border-color: var(--line-strong);
@@ -3237,6 +3267,7 @@ h1 {
 
   .games-actions select,
   .community-filters select,
+  .community-sort-toggle,
   .match-search-field,
   .match-search-field input {
     width: 100%;
@@ -3508,7 +3539,8 @@ h1 {
 
   .games-actions button,
   .games-actions select,
-  .community-filters select {
+  .community-filters select,
+  .community-sort-toggle {
     width: 100%;
   }
 

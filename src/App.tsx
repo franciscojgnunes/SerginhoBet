@@ -162,6 +162,7 @@ function findAvailableOdd(matchOdds: MatchOdd[] | undefined, marketType: MarketT
 type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile" | "admin";
 type StatsScope = ReturnType<typeof buildStatsScope>;
 type SyncStatus = "idle" | "loading" | "ready" | "saving" | "error";
+type PickGroupSortMode = "recent" | "score";
 type ChartPoint = {
   label: string;
   profit: number;
@@ -187,14 +188,26 @@ function pickGroupKey(pick: Pick) {
   ].join("|");
 }
 
-function buildPickGroups(picks: Pick[], votes: VoteRecord[]) {
+function sortPickGroups(groups: PickGroup[], mode: PickGroupSortMode) {
+  return [...groups].sort((left, right) => {
+    if (mode === "score") {
+      const scoreDelta = right.score - left.score;
+      if (scoreDelta !== 0) return scoreDelta;
+      const countDelta = right.picks.length - left.picks.length;
+      if (countDelta !== 0) return countDelta;
+    }
+    return new Date(right.representative.createdAt).getTime() - new Date(left.representative.createdAt).getTime();
+  });
+}
+
+function buildPickGroups(picks: Pick[], votes: VoteRecord[], sortMode: PickGroupSortMode = "score") {
   const grouped = new Map<string, Pick[]>();
   for (const pick of picks) {
     const key = pickGroupKey(pick);
     grouped.set(key, [...(grouped.get(key) ?? []), pick]);
   }
 
-  return Array.from(grouped.entries()).map(([key, groupPicks]) => {
+  const groups = Array.from(grouped.entries()).map(([key, groupPicks]) => {
     const orderedPicks = [...groupPicks].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
     return {
       key,
@@ -203,13 +216,8 @@ function buildPickGroups(picks: Pick[], votes: VoteRecord[]) {
       score: orderedPicks.reduce((total, pick) => total + scorePick(pick.id, votes), 0),
       authors: Array.from(new Set(orderedPicks.map((pick) => pick.userId))).map(userById)
     };
-  }).sort((left, right) => {
-    const scoreDelta = right.score - left.score;
-    if (scoreDelta !== 0) return scoreDelta;
-    const countDelta = right.picks.length - left.picks.length;
-    if (countDelta !== 0) return countDelta;
-    return new Date(right.representative.createdAt).getTime() - new Date(left.representative.createdAt).getTime();
   });
+  return sortPickGroups(groups, sortMode);
 }
 
 let runtimeUsers: User[] = [...users];
@@ -719,6 +727,7 @@ export function App() {
   const [matchSearch, setMatchSearch] = useState("");
   const [communityMatchFilter, setCommunityMatchFilter] = useState("all");
   const [communityMatchSearch, setCommunityMatchSearch] = useState("");
+  const [communitySortMode, setCommunitySortMode] = useState<PickGroupSortMode>("recent");
   const [formState, setFormState] = useState({
     marketType: "1X2" as MarketType,
     selection: "",
@@ -1068,7 +1077,7 @@ export function App() {
       return matchesDropdown && matchesSearch;
     });
   }, [communityMatchFilter, communityMatchSearch, communityPicks, matches]);
-  const communityPickGroups = useMemo(() => buildPickGroups(filteredCommunityPicks, votes), [filteredCommunityPicks, votes]);
+  const communityPickGroups = useMemo(() => buildPickGroups(filteredCommunityPicks, votes, communitySortMode), [communitySortMode, filteredCommunityPicks, votes]);
   const communitySections = useMemo(() => {
     const sections = new Map<string, PickGroup[]>();
     for (const group of communityPickGroups) {
@@ -1329,7 +1338,7 @@ export function App() {
   }
 
   function generateSlip() {
-    const groupedPickIds = communityPickGroups.slice(0, 4).flatMap((group) => group.picks.map((pick) => pick.id));
+    const groupedPickIds = sortPickGroups(communityPickGroups, "score").slice(0, 4).flatMap((group) => group.picks.map((pick) => pick.id));
     setDailySlip((slip) => ({
       ...slip,
       status: "draft",
@@ -1343,7 +1352,7 @@ export function App() {
   function publishSlip() {
     const publishedAt = new Date().toISOString();
     const historyId = `slip-${Date.now()}`;
-    const groupedPickIds = communityPickGroups.slice(0, 4).flatMap((group) => group.picks.map((pick) => pick.id));
+    const groupedPickIds = sortPickGroups(communityPickGroups, "score").slice(0, 4).flatMap((group) => group.picks.map((pick) => pick.id));
     const pickIds = dailySlip.pickIds.length > 0 ? dailySlip.pickIds : groupedPickIds.length > 0 ? groupedPickIds : selectSlipPicks(picks, votes, 4).map((pick) => pick.id);
     const allInStake = Math.max(0, settledBankroll);
     const nextSlip: DailySlip = {
@@ -1672,6 +1681,11 @@ export function App() {
     const match = matches.find((item) => item.id === pick.matchId);
     const selected = group.picks.every((groupPick) => dailySlip.pickIds.includes(groupPick.id));
     const canVote = group.picks.some((groupPick) => groupPick.userId !== activeUserId);
+    const activeVoteTypes = new Set(
+      votes
+        .filter((voteItem) => voteItem.userId === activeUserId && group.picks.some((groupPick) => groupPick.id === voteItem.pickId))
+        .map((voteItem) => voteItem.type)
+    );
     const uniqueReasons = group.picks
       .filter((groupPick) => groupPick.reason.trim() && !normalizeFilterText(groupPick.reason).startsWith("sem justificacao"))
       .map((groupPick) => ({ pick: groupPick, author: userById(groupPick.userId) }));
@@ -1749,15 +1763,15 @@ export function App() {
           </div>
         ) : null}
         <div className="vote-row">
-          <button onClick={() => castGroupVote(group, "trust")} disabled={!canVote}>
+          <button className={activeVoteTypes.has("trust") ? "selected" : ""} onClick={() => castGroupVote(group, "trust")} disabled={!canVote}>
             <ThumbsUp size={16} />
             Confio
           </button>
-          <button onClick={() => castGroupVote(group, "doubt")} disabled={!canVote}>
+          <button className={activeVoteTypes.has("doubt") ? "selected" : ""} onClick={() => castGroupVote(group, "doubt")} disabled={!canVote}>
             <ThumbsDown size={16} />
             Não confio
           </button>
-          <button onClick={() => castGroupVote(group, "strong")} disabled={!canVote}>
+          <button className={activeVoteTypes.has("strong") ? "selected" : ""} onClick={() => castGroupVote(group, "strong")} disabled={!canVote}>
             <Flame size={16} />
             Forte
           </button>
@@ -1977,6 +1991,10 @@ export function App() {
                   </option>
                 ))}
               </select>
+              <div className="community-sort-toggle" aria-label="Ordenar tips da comunidade">
+                <button className={communitySortMode === "recent" ? "active" : ""} onClick={() => setCommunitySortMode("recent")}>Recentes</button>
+                <button className={communitySortMode === "score" ? "active" : ""} onClick={() => setCommunitySortMode("score")}>Score</button>
+              </div>
             </div>
             <div className="pick-stack">
               {communitySections.map((section) => (

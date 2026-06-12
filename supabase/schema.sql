@@ -271,6 +271,11 @@ to authenticated
 using (public.is_streamer())
 with check (public.is_streamer());
 
+create policy "streamers delete picks"
+on public.picks for delete
+to authenticated
+using (public.is_streamer());
+
 create policy "votes are readable by logged users"
 on public.votes for select
 to authenticated
@@ -302,6 +307,11 @@ on public.votes for update
 to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
+
+create policy "users and streamers delete votes"
+on public.votes for delete
+to authenticated
+using ((select auth.uid()) = user_id or public.is_streamer());
 
 create policy "slips are readable by logged users"
 on public.daily_slips for select
