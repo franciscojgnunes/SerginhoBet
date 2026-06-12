@@ -185,9 +185,28 @@ function pickGroupKey(pick: Pick) {
   return [
     pick.matchId,
     pick.marketType,
-    pick.selection.trim().toLowerCase(),
-    pick.odds.toFixed(2)
+    normalizePickSelectionForGrouping(pick.marketType, pick.selection)
   ].join("|");
+}
+
+function normalizePickSelectionForGrouping(marketType: MarketType, selection: string) {
+  const value = normalizeFilterText(selection).replace(/,/g, ".").replace(/\s+/g, " ");
+
+  if (marketType === "Over/Under") {
+    const match = value.match(/^(mais|menos)(?: de)? (\d+(?:\.\d+)?)(?: golos?)?$/);
+    if (match) return `${match[1]} de ${match[2]} golos`;
+  }
+
+  if (marketType === "Golos ao intervalo") {
+    const match = value.match(/^(mais|menos)(?: de)? (\d+(?:\.\d+)?)(?: golos?)?(?: ao intervalo)?$/);
+    if (match) return `${match[1]} de ${match[2]} golos ao intervalo`;
+  }
+
+  if (marketType === "Ambas marcam") {
+    return value.replace(/^ambas marcam:?\s*/, "");
+  }
+
+  return value;
 }
 
 function sortPickGroups(groups: PickGroup[], mode: PickGroupSortMode) {
@@ -659,7 +678,7 @@ function normalizePickStake(pick: Pick): Pick {
 function isEquivalentSlipPick(left: Pick, right: Pick) {
   return left.matchId === right.matchId
     && left.marketType === right.marketType
-    && normalizeFilterText(left.selection) === normalizeFilterText(right.selection);
+    && normalizePickSelectionForGrouping(left.marketType, left.selection) === normalizePickSelectionForGrouping(right.marketType, right.selection);
 }
 
 function getSlipPicks(slip: SlipHistoryItem, sourcePicks: Pick[]) {
