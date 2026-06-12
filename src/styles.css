@@ -2532,9 +2532,54 @@ h1 {
   background: #07150e;
   border: 1px solid var(--line);
   border-radius: 8px;
+  display: grid;
+  gap: 8px;
   margin-top: 14px;
   overflow: hidden;
   padding: 12px;
+}
+
+.chart-summary,
+.chart-foot {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.chart-summary strong,
+.chart-summary span,
+.chart-foot span {
+  display: block;
+}
+
+.chart-summary strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.chart-summary span,
+.chart-foot span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.chart-summary > b {
+  background: rgba(183, 255, 52, 0.12);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.98rem;
+  padding: 6px 10px;
+}
+
+.chart-foot {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.chart-foot b {
+  color: var(--text);
 }
 
 .chart-wrap svg {
@@ -2542,8 +2587,14 @@ h1 {
   width: 100%;
 }
 
+.chart-grid {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-dasharray: 4 8;
+  stroke-width: 1;
+}
+
 .chart-axis {
-  stroke: rgba(255, 255, 255, 0.18);
+  stroke: rgba(255, 255, 255, 0.26);
   stroke-width: 1;
 }
 
@@ -2580,8 +2631,15 @@ h1 {
 
 .chart-wrap text {
   fill: var(--muted);
-  font-size: 0.78rem;
   font-weight: 800;
+}
+
+.chart-y-label {
+  font-size: 0.64rem;
+}
+
+.chart-x-label {
+  font-size: 0.72rem;
 }
 
 .chart-empty {

@@ -162,6 +162,14 @@ function findAvailableOdd(matchOdds: MatchOdd[] | undefined, marketType: MarketT
 type Page = "games" | "community" | "viewer" | "resolve" | "history" | "stats" | "profile" | "admin";
 type StatsScope = ReturnType<typeof buildStatsScope>;
 type SyncStatus = "idle" | "loading" | "ready" | "saving" | "error";
+type ChartPoint = {
+  label: string;
+  profit: number;
+  stake: number;
+  cumulative: number;
+  cumulativeStake: number;
+  roi: number;
+};
 type PickGroup = {
   key: string;
   picks: Pick[];
@@ -514,42 +522,63 @@ function buildStatsScope(label: string, picks: Pick[], slips: SlipHistoryItem[],
         profit: roundedProfit,
         roi: roundedStake > 0 ? roundUnits((roundedProfit / roundedStake) * 100) : 0
       };
-    }).sort((left, right) => right.profit - left.profit || right.selected - left.selected || right.submitted - left.submitted)
+    }).sort((left, right) =>
+      Number(right.settled > 0) - Number(left.settled > 0)
+      || right.roi - left.roi
+      || right.profit - left.profit
+      || right.selected - left.selected
+      || right.submitted - left.submitted
+    )
   };
 }
 
-function buildSlipTimeline(slips: SlipHistoryItem[], filter: (value: string) => boolean) {
+function buildSlipTimeline(slips: SlipHistoryItem[], filter: (value: string) => boolean): ChartPoint[] {
   let cumulative = 0;
+  let cumulativeStake = 0;
   return slips
     .filter((slip) => slip.settlementStatus !== "pending" && filter(slip.publishedAt))
     .sort((left, right) => new Date(left.publishedAt).getTime() - new Date(right.publishedAt).getTime())
     .map((slip) => {
+      const stake = slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length;
       cumulative = roundUnits(cumulative + slip.profit);
+      cumulativeStake = roundUnits(cumulativeStake + stake);
       return {
         label: new Date(slip.publishedAt).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" }),
         profit: slip.profit,
-        cumulative
+        stake,
+        cumulative,
+        cumulativeStake,
+        roi: cumulativeStake > 0 ? roundUnits((cumulative / cumulativeStake) * 100) : 0
       };
     });
 }
 
-function buildResultTimeline(picks: Pick[], slips: SlipHistoryItem[], filter: (value: string) => boolean) {
+function buildResultTimeline(picks: Pick[], slips: SlipHistoryItem[], filter: (value: string) => boolean): ChartPoint[] {
   const selectedIds = new Set(slips.flatMap((slip) => slip.pickIds));
   const slipEvents = slips
     .filter((slip) => slip.settlementStatus !== "pending" && filter(slip.publishedAt))
-    .map((slip) => ({ date: slip.publishedAt, profit: slip.profit }));
+    .map((slip) => ({
+      date: slip.publishedAt,
+      profit: slip.profit,
+      stake: slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length
+    }));
   const standaloneEvents = picks
     .filter((pick) => pick.status !== "pending" && !selectedIds.has(pick.id) && filter(pick.createdAt))
-    .map((pick) => ({ date: pick.createdAt, profit: pick.profit }));
+    .map((pick) => ({ date: pick.createdAt, profit: pick.profit, stake: pick.stake }));
   let cumulative = 0;
+  let cumulativeStake = 0;
   return [...slipEvents, ...standaloneEvents]
     .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())
     .map((event) => {
       cumulative = roundUnits(cumulative + event.profit);
+      cumulativeStake = roundUnits(cumulativeStake + event.stake);
       return {
         label: new Date(event.date).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" }),
         profit: event.profit,
-        cumulative
+        stake: event.stake,
+        cumulative,
+        cumulativeStake,
+        roi: cumulativeStake > 0 ? roundUnits((cumulative / cumulativeStake) * 100) : 0
       };
     });
 }
@@ -566,7 +595,12 @@ function buildLeaderboard(scope: StatsScope) {
         winrate: row && row.selected > 0 ? roundUnits((row.settled / row.selected) * 100) : 0
       };
     })
-    .sort((a, b) => b.profit - a.profit || b.roi - a.roi || b.winrate - a.winrate);
+    .sort((a, b) =>
+      Number(b.picks > 0) - Number(a.picks > 0)
+      || b.roi - a.roi
+      || b.profit - a.profit
+      || b.winrate - a.winrate
+    );
 }
 
 function formatNameList(names: string[]) {
@@ -3277,9 +3311,9 @@ function StatsDashboard({
   dayScope: StatsScope;
   monthScope: StatsScope;
   allTimeScope: StatsScope;
-  dayTimeline: Array<{ label: string; profit: number; cumulative: number }>;
-  monthTimeline: Array<{ label: string; profit: number; cumulative: number }>;
-  allTimeTimeline: Array<{ label: string; profit: number; cumulative: number }>;
+  dayTimeline: ChartPoint[];
+  monthTimeline: ChartPoint[];
+  allTimeTimeline: ChartPoint[];
   monthlyLeaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
   generalLeaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
   bankroll: ReturnType<typeof calculateBankroll>;
@@ -3299,12 +3333,12 @@ function StatsDashboard({
           <span>
             Lider de {monthName}
             <b>{monthLeader ? monthLeader.user.displayName : "Ainda sem resolvidas"}</b>
-            <small>{monthLeader ? `${monthLeader.profit >= 0 ? "+" : ""}${monthLeader.profit.toFixed(2)}u - ROI ${monthLeader.roi.toFixed(1)}%` : "Resolve uma aposta final para iniciar ranking."}</small>
+            <small>{monthLeader ? `ROI ${monthLeader.roi.toFixed(1)}% - ${monthLeader.profit >= 0 ? "+" : ""}${monthLeader.profit.toFixed(2)}u` : "Resolve uma aposta final para iniciar ranking."}</small>
           </span>
           <span>
             Lider geral
             <b>{generalLeader ? generalLeader.user.displayName : "Ainda sem resolvidas"}</b>
-            <small>{generalLeader ? `${generalLeader.profit >= 0 ? "+" : ""}${generalLeader.profit.toFixed(2)}u - ROI ${generalLeader.roi.toFixed(1)}%` : "Sem historico fechado."}</small>
+            <small>{generalLeader ? `ROI ${generalLeader.roi.toFixed(1)}% - ${generalLeader.profit >= 0 ? "+" : ""}${generalLeader.profit.toFixed(2)}u` : "Sem historico fechado."}</small>
           </span>
           <span>
             Banca atual
@@ -3317,19 +3351,19 @@ function StatsDashboard({
       <section className="panel stats-hero-panel">
         <div className="section-title"><LineChart size={18} /><h3>Estatisticas do dia</h3></div>
         <StatsMetricGrid scope={dayScope} bankroll={bankroll} />
-        <ProfitChart points={dayTimeline} />
+        <ProfitChart points={dayTimeline} title="Evolucao do ROI do dia" />
       </section>
 
       <section className="panel stats-hero-panel">
         <div className="section-title"><LineChart size={18} /><h3>Estatisticas de {monthName}</h3></div>
         <StatsMetricGrid scope={monthScope} />
-        <ProfitChart points={monthTimeline} />
+        <ProfitChart points={monthTimeline} title={`Evolucao do ROI de ${monthName}`} />
       </section>
 
       <section className="panel stats-hero-panel">
         <div className="section-title"><LineChart size={18} /><h3>Estatisticas gerais</h3></div>
         <StatsMetricGrid scope={allTimeScope} />
-        <ProfitChart points={allTimeTimeline} />
+        <ProfitChart points={allTimeTimeline} title="Evolucao do ROI geral" />
       </section>
 
       <StatsTable title={`Performance de ${monthName}`} scope={monthScope} />
@@ -3373,13 +3407,19 @@ function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
         roi: 0
       }
     }))
-    .sort((left, right) => right.row.profit - left.row.profit || right.row.settled - left.row.settled || right.row.selected - left.row.selected);
+    .sort((left, right) =>
+      Number(right.row.settled > 0) - Number(left.row.settled > 0)
+      || right.row.roi - left.row.roi
+      || right.row.profit - left.row.profit
+      || right.row.settled - left.row.settled
+      || right.row.selected - left.row.selected
+    );
 
   return (
     <section className="panel stats-table-panel">
       <div className="section-title spread">
         <div><Trophy size={18} /><h3>{title}</h3></div>
-        <span>{scope.total.profit >= 0 ? "+" : ""}{scope.total.profit.toFixed(2)}u</span>
+        <span>Ranking por ROI</span>
       </div>
       <div className="stats-table">
         <div className="stats-table-head"><span>Pessoa</span><span>Tips</span><span>Finais</span><span>Resolvidas</span><span>Stake</span><span>Lucro</span><span>ROI</span></div>
@@ -3391,7 +3431,7 @@ function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
             <span>{row.settled}</span>
             <span>{row.staked.toFixed(2)}u</span>
             <b className={row.profit < 0 ? "negative-value" : "positive-value"}>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
-            <span className={row.roi < 0 ? "negative-value" : ""}>{row.roi.toFixed(1)}%</span>
+            <b className={row.roi < 0 ? "negative-value" : "positive-value"}>{row.roi.toFixed(1)}%</b>
           </div>
         )) : <div className="stats-empty-row">Ainda nao existem perfis reais nesta liga.</div>}
       </div>
@@ -3402,15 +3442,18 @@ function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
 function LeaderboardPanel({ title, leaderboard }: { title: string; leaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }> }) {
   return (
     <section className="panel stats-table-panel">
-      <div className="section-title"><Trophy size={18} /><h3>{title}</h3></div>
+      <div className="section-title spread">
+        <div><Trophy size={18} /><h3>{title}</h3></div>
+        <span>ROI</span>
+      </div>
       <div className="leaderboard">
         {leaderboard.map((row, index) => (
           <div className="leader-row" key={row.user.id}>
             <span>{index + 1}</span>
             <Avatar user={row.user} />
             <strong>{row.user.displayName}</strong>
-            <small>{row.picks} resolvidas - ROI {row.roi.toFixed(1)}%</small>
-            <b className={row.profit < 0 ? "negative-value" : "positive-value"}>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
+            <small>{row.picks} resolvidas - {row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</small>
+            <b className={row.roi < 0 ? "negative-value" : "positive-value"}>{row.roi.toFixed(1)}%</b>
           </div>
         ))}
         {leaderboard.length === 0 ? <div className="stats-empty-row">Ainda nao existem perfis reais nesta liga.</div> : null}
@@ -3426,7 +3469,7 @@ function StatsPage({
   bankroll
 }: {
   dailyStats: ReturnType<typeof calculateDailyStats>;
-  profitTimeline: Array<{ label: string; profit: number; cumulative: number }>;
+  profitTimeline: ChartPoint[];
   leaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
   bankroll: ReturnType<typeof calculateBankroll>;
 }) {
@@ -3445,7 +3488,7 @@ function StatsPage({
           <span>Banca atual <b>{bankroll.current.toFixed(2)}u</b></span>
           <span>Disponível <b>{(bankroll.current - bankroll.exposure).toFixed(2)}u</b></span>
         </div>
-        <ProfitChart points={profitTimeline} />
+        <ProfitChart points={profitTimeline} title="Evolucao do ROI" />
       </section>
 
       <section className="panel giveaway-panel">
@@ -3517,36 +3560,66 @@ function StatsPage({
   );
 }
 
-function ProfitChart({ points }: { points: Array<{ label: string; profit: number; cumulative: number }> }) {
-  if (points.length === 0) return <div className="chart-empty">Ainda não há picks finais resolvidas para desenhar evolução.</div>;
+function ProfitChart({ points, title }: { points: ChartPoint[]; title: string }) {
+  if (points.length === 0) return <div className="chart-empty">Ainda nao ha apostas resolvidas para desenhar evolucao.</div>;
 
   const width = 760;
   const height = 260;
-  const padding = 34;
-  const values = points.map((point) => point.cumulative);
+  const paddingX = 48;
+  const paddingTop = 30;
+  const paddingBottom = 42;
+  const values = points.map((point) => point.roi);
   const min = Math.min(0, ...values);
   const max = Math.max(0, ...values);
-  const range = max - min || 1;
+  const paddedMin = min === max ? min - 5 : Math.floor((min - 4) / 5) * 5;
+  const paddedMax = min === max ? max + 5 : Math.ceil((max + 4) / 5) * 5;
+  const range = paddedMax - paddedMin || 1;
   const coords = points.map((point, index) => {
-    const x = padding + (index / Math.max(points.length - 1, 1)) * (width - padding * 2);
-    const y = height - padding - ((point.cumulative - min) / range) * (height - padding * 2);
+    const x = paddingX + (index / Math.max(points.length - 1, 1)) * (width - paddingX * 2);
+    const y = height - paddingBottom - ((point.roi - paddedMin) / range) * (height - paddingTop - paddingBottom);
     return { ...point, x, y };
   });
   const path = coords.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
-  const zeroY = height - padding - ((0 - min) / range) * (height - padding * 2);
+  const zeroY = height - paddingBottom - ((0 - paddedMin) / range) * (height - paddingTop - paddingBottom);
+  const finalPoint = points[points.length - 1];
+  const guideValues = [paddedMax, roundUnits((paddedMax + paddedMin) / 2), paddedMin];
+  const labelEvery = Math.max(1, Math.ceil(points.length / 5));
 
   return (
     <div className="chart-wrap">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Evolução do lucro das picks finais">
-        <line className="chart-axis" x1={padding} x2={width - padding} y1={zeroY} y2={zeroY} />
+      <div className="chart-summary">
+        <div>
+          <strong>{title}</strong>
+          <span>ROI acumulado por aposta resolvida</span>
+        </div>
+        <b className={finalPoint.roi < 0 ? "negative-value" : "positive-value"}>{finalPoint.roi.toFixed(1)}%</b>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+        {guideValues.map((value, index) => {
+          const y = height - paddingBottom - ((value - paddedMin) / range) * (height - paddingTop - paddingBottom);
+          return (
+            <g key={`${value}-${index}`}>
+              <line className="chart-grid" x1={paddingX} x2={width - paddingX} y1={y} y2={y} />
+              <text className="chart-y-label" x={12} y={y + 4}>{value.toFixed(0)}%</text>
+            </g>
+          );
+        })}
+        <line className="chart-axis" x1={paddingX} x2={width - paddingX} y1={zeroY} y2={zeroY} />
         <path className="chart-line" d={path} />
-        {coords.map((point) => (
-          <g key={`${point.label}-${point.cumulative}`}>
-            <circle className={point.cumulative >= 0 ? "chart-dot positive" : "chart-dot negative"} cx={point.x} cy={point.y} r="5" />
-            <text x={point.x} y={height - 10} textAnchor="middle">{point.label}</text>
+        {coords.map((point, index) => {
+          const showLabel = index === 0 || index === coords.length - 1 || index % labelEvery === 0;
+          return (
+          <g key={`${point.label}-${point.cumulative}-${index}`}>
+            <circle className={point.roi >= 0 ? "chart-dot positive" : "chart-dot negative"} cx={point.x} cy={point.y} r="5" />
+            {showLabel ? <text className="chart-x-label" x={point.x} y={height - 12} textAnchor="middle">{point.label}</text> : null}
           </g>
-        ))}
+          );
+        })}
       </svg>
+      <div className="chart-foot">
+        <span>Lucro acumulado: <b className={finalPoint.cumulative < 0 ? "negative-value" : "positive-value"}>{finalPoint.cumulative >= 0 ? "+" : ""}{finalPoint.cumulative.toFixed(2)}u</b></span>
+        <span>Stake fechada: <b>{finalPoint.cumulativeStake.toFixed(2)}u</b></span>
+      </div>
     </div>
   );
 }
