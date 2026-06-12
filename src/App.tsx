@@ -970,6 +970,7 @@ export function App() {
   const selectedMatchPickGroups = useMemo(() => buildPickGroups(selectedMatchPicks, votes), [selectedMatchPicks, votes]);
   const communityStartDay = communityDayKeys[communityDayKeys.length - 1];
   const communityPicks = [...picks]
+    .filter(isPickBeforeKickoff)
     .filter((pick) => {
       const match = matches.find((item) => item.id === pick.matchId);
       const day = match ? getLocalDateKey(new Date(match.startsAt)) : pick.createdAt.slice(0, 10);
@@ -1019,6 +1020,9 @@ export function App() {
     .map((pickId) => picks.find((pick) => pick.id === pickId))
     .filter((pick): pick is Pick => Boolean(pick));
   const topSlipPickGroups = useMemo(() => buildPickGroups(topSlipPicks, votes), [topSlipPicks, votes]);
+  const visibleTopSlipPicks = topSlipPicks.filter(isPickBeforeKickoff);
+  const visibleTopSlipPickGroups = useMemo(() => buildPickGroups(visibleTopSlipPicks, votes), [visibleTopSlipPicks, votes]);
+  const showCommunitySlipPanel = topSlipPicks.length === 0 || visibleTopSlipPicks.length > 0;
   const resolvableSlipHistory = slipHistory.filter((slip) => slip.settlementStatus === "pending");
   const selectedResolveSlip = resolvableSlipHistory.find((slip) => slip.id === selectedResolveSlipId) ?? resolvableSlipHistory[0];
   const selectedResolvePicks = selectedResolveSlip
@@ -1027,8 +1031,10 @@ export function App() {
   const selectedResolvePickGroups = useMemo(() => buildPickGroups(selectedResolvePicks, votes), [selectedResolvePicks, votes]);
 
   const combinedOdds = topSlipPickGroups.reduce((total, group) => total * group.representative.odds, 1);
+  const visibleCombinedOdds = visibleTopSlipPickGroups.reduce((total, group) => total * group.representative.odds, 1);
   const selectedResolveCombinedOdds = selectedResolvePickGroups.reduce((total, group) => total * group.representative.odds, 1);
   const multiplesStake = topSlipPickGroups.length * dailySlip.multiplesStake;
+  const visibleMultiplesStake = visibleTopSlipPickGroups.length * dailySlip.multiplesStake;
   const isPublishedSlip = dailySlip.status === "published" && topSlipPicks.length > 0;
   const combinedSlipSettled = dailySlip.mode === "combined" && dailySlip.settlementStatus !== "pending";
   const slipExposure = isPublishedSlip && !combinedSlipSettled
@@ -1874,7 +1880,7 @@ export function App() {
                   </label>
                 )}
                 <div className="candidate-list final-only-list">
-                  {topSlipPickGroups.map((group) => {
+                  {visibleTopSlipPickGroups.map((group) => {
                     const pick = group.representative;
                     const match = matches.find((item) => item.id === pick.matchId);
                     return (
@@ -1887,22 +1893,24 @@ export function App() {
                       </div>
                     );
                   })}
-                  {topSlipPicks.length === 0 ? (
+                  {visibleTopSlipPicks.length === 0 ? (
                     <p className="empty-copy">Ainda nÃ£o existem picks finais. Usa "Preencher por votos" ou escolhe uma tip na lista da comunidade.</p>
                   ) : null}
                 </div>
               </section>
             ) : null}
-            <SlipPanel
-              picks={topSlipPickGroups.map((group) => group.representative)}
-              matches={matches}
-              combinedOdds={combinedOdds}
-              combinedStake={dailySlip.combinedStake}
-              multiplesUnitStake={dailySlip.multiplesStake}
-              multiplesStake={multiplesStake}
-              mode={dailySlip.mode}
-              status={dailySlip.status}
-            />
+            {showCommunitySlipPanel ? (
+              <SlipPanel
+                picks={visibleTopSlipPickGroups.map((group) => group.representative)}
+                matches={matches}
+                combinedOdds={visibleCombinedOdds}
+                combinedStake={dailySlip.combinedStake}
+                multiplesUnitStake={dailySlip.multiplesStake}
+                multiplesStake={visibleMultiplesStake}
+                mode={dailySlip.mode}
+                status={dailySlip.status}
+              />
+            ) : null}
             <BankPanel bankroll={communityBankroll} />
           </aside>
         </section>
