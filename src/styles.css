@@ -1044,6 +1044,10 @@ h1 {
   min-width: 0;
 }
 
+.personal-picks-panel {
+  margin-top: 14px;
+}
+
 .viewer-slip-panel,
 .viewer-history-panel {
   align-self: start;
@@ -2782,6 +2786,82 @@ h1 {
   color: var(--green);
 }
 
+.personal-picks-table {
+  display: grid;
+  gap: 6px;
+  max-height: 460px;
+  min-width: 0;
+  overflow: auto;
+  padding-right: 2px;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.personal-picks-head,
+.personal-picks-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(150px, 1fr) minmax(72px, 0.45fr) minmax(220px, 1.35fr) minmax(170px, 1fr) minmax(58px, 0.35fr) minmax(90px, 0.45fr) minmax(70px, 0.4fr);
+  min-width: 980px;
+}
+
+.personal-picks-head {
+  background: rgba(14, 36, 24, 0.98);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  padding: 0 8px 2px;
+  position: sticky;
+  text-transform: uppercase;
+  top: 0;
+  z-index: 2;
+}
+
+.personal-picks-row {
+  background: #07150e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.9rem;
+  min-height: 58px;
+  padding: 8px;
+}
+
+.compact-author {
+  min-width: 0;
+}
+
+.compact-author .avatar {
+  height: 34px;
+  width: 34px;
+}
+
+.compact-author strong,
+.personal-match-cell strong,
+.personal-tip-cell strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-match-cell,
+.personal-tip-cell {
+  display: grid;
+  min-width: 0;
+}
+
+.personal-match-cell small,
+.personal-tip-cell small {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-picks-row b {
+  font-weight: 1000;
+}
+
 .positive-value {
   color: var(--green) !important;
 }
@@ -3346,9 +3426,19 @@ h1 {
     max-width: calc(100vw - 28px);
   }
 
+  .personal-picks-table {
+    max-width: calc(100vw - 28px);
+    overflow-x: auto;
+  }
+
   .stats-table-head,
   .stats-table-row {
     min-width: 640px;
+  }
+
+  .personal-picks-head,
+  .personal-picks-row {
+    min-width: 860px;
   }
 
   .confirm-card {

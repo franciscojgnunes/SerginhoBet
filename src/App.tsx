@@ -2240,9 +2240,9 @@ export function App() {
           user={activeUser}
           isStreamer={isStreamer}
           canEditOdds={isStreamer || isPlatformAdmin}
-          allPicks={picks}
+          allPicks={allStoredPicks}
           matches={matches}
-          slipHistory={slipHistory}
+          slipHistory={allStoredSlips}
           votes={votes}
           onUpdateOdd={isStreamer || isPlatformAdmin ? updateSlipPickOdds : undefined}
         />
@@ -2864,6 +2864,13 @@ function HistoryPage({
   const resolvedPicks = visiblePicks
     .filter((pick) => pick.status !== "pending")
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const personalPickRows = [...allPicks]
+    .filter((pick) => pick.status !== "pending")
+    .sort((left, right) => {
+      const authorDelta = userById(left.userId).displayName.localeCompare(userById(right.userId).displayName, "pt");
+      if (authorDelta !== 0) return authorDelta;
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+    });
   const settledSlips = slipHistory.filter((slip) => slip.settlementStatus !== "pending");
   const totalProfit = settledSlips.reduce((total, slip) => total + slip.profit, 0);
 
@@ -2940,6 +2947,50 @@ function HistoryPage({
             </article>
           ))}
           {slipHistory.length === 0 ? <p className="empty-copy">Ainda nao existem apostas publicadas no historico.</p> : null}
+        </div>
+      </section>
+
+      <section className="panel history-panel personal-picks-panel">
+        <div className="section-title spread">
+          <div><Trophy size={18} /><h3>Apostas pessoais</h3></div>
+          <span>{personalPickRows.length} classificadas</span>
+        </div>
+        <div className="personal-picks-table">
+          <div className="personal-picks-head">
+            <span>Pessoa</span>
+            <span>Data</span>
+            <span>Jogo</span>
+            <span>Tip</span>
+            <span>Odd</span>
+            <span>Estado</span>
+            <span>Lucro</span>
+          </div>
+          {personalPickRows.map((pick) => {
+            const author = userById(pick.userId);
+            const match = matches.find((item) => item.id === pick.matchId);
+            const profit = calculateProfit(pick.status, fixedViewerStake, pick.odds);
+            return (
+              <article className="personal-picks-row" key={pick.id}>
+                <div className="author compact-author">
+                  <Avatar user={author} />
+                  <strong>{author.displayName}</strong>
+                </div>
+                <span>{new Date(pick.createdAt).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "2-digit" })}</span>
+                <div className="personal-match-cell">
+                  <strong>{match ? `${match.homeTeam} vs ${match.awayTeam}` : "Jogo indisponivel"}</strong>
+                  {match ? <small>{match.competition}</small> : null}
+                </div>
+                <div className="personal-tip-cell">
+                  <strong>{pick.selection}</strong>
+                  <small>{pick.marketType}</small>
+                </div>
+                <span>@{pick.odds.toFixed(2)}</span>
+                <div className={`status ${pick.status}`}>{statusLabel(pick.status)}</div>
+                <b className={profit < 0 ? "negative-value" : "positive-value"}>{profit >= 0 ? "+" : ""}{profit.toFixed(2)}u</b>
+              </article>
+            );
+          })}
+          {personalPickRows.length === 0 ? <p className="empty-copy">Ainda nao existem apostas pessoais classificadas.</p> : null}
         </div>
       </section>
     </section>
