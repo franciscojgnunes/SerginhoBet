@@ -1120,14 +1120,20 @@ export function App() {
     () => buildStatsScope("Geral", allStoredPicks, allStoredSlips, () => true),
     [allStoredPicks, allStoredSlips]
   );
-  const settledBankroll = roundUnits(communityInitialBankroll + allTimeScope.total.profit);
+  const settledCommunitySlips = allStoredSlips.filter((slip) => slip.settlementStatus !== "pending");
+  const communitySlipProfit = roundUnits(settledCommunitySlips.reduce((total, slip) => total + slip.profit, 0));
+  const communitySlipStake = roundUnits(settledCommunitySlips.reduce((total, slip) => {
+    const stake = slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length;
+    return total + stake;
+  }, 0));
+  const settledBankroll = roundUnits(communityInitialBankroll + communitySlipProfit);
   const slipExposure = isPublishedSlip && !slipSettled ? settledBankroll : 0;
   const communityBankroll = {
     initial: communityInitialBankroll,
     current: settledBankroll,
     exposure: slipExposure,
-    settledProfit: allTimeScope.total.profit,
-    roi: allTimeScope.total.roi
+    settledProfit: communitySlipProfit,
+    roi: communitySlipStake > 0 ? roundUnits((communitySlipProfit / communitySlipStake) * 100) : 0
   };
   const allInStakePreview = Math.max(0, settledBankroll);
   const allInMultiplesUnitStake = visibleTopSlipPickGroups.length > 0 ? roundUnits(allInStakePreview / visibleTopSlipPickGroups.length) : allInStakePreview;
