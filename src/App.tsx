@@ -664,6 +664,7 @@ export function App() {
   const [matchOdds, setMatchOdds] = useState<MatchOdd[]>(() => readStoredValue<MatchOdd[]>(oddsCacheKey, []));
   const [dailySlip, setDailySlip] = useState<DailySlip>(() => readStoredValue<DailySlip>(slipCacheKey, createDefaultDailySlip()));
   const [slipHistory, setSlipHistory] = useState<SlipHistoryItem[]>(() => readStoredValue<SlipHistoryItem[]>(slipHistoryCacheKey, []));
+  const [localSlipOverrides, setLocalSlipOverrides] = useState<Record<string, Partial<SlipHistoryItem>>>({});
   const [popup, setPopup] = useState<{ title: string; body: string } | null>(null);
   const [pendingSettlement, setPendingSettlement] = useState<
     | { kind: "combined"; slipId: string; status: PickStatus }
@@ -811,7 +812,8 @@ export function App() {
           })
           .filter((pick) => localPickOverrides[pick.id] !== null);
         const oldStakePicks = resetPicks.filter((pick) => pick.stake !== fixedViewerStake);
-        setPicks(resetPicks.map(normalizePickStake));
+        const normalizedRemotePicks = resetPicks.map(normalizePickStake);
+        setPicks(normalizedRemotePicks);
         if (oldStakePicks.length > 0) {
           void Promise.all(oldStakePicks.map((pick) => updatePickStake(pick.id, fixedViewerStake))).catch((error) => {
             console.error("Failed to normalize old pick stakes", error);
@@ -825,7 +827,14 @@ export function App() {
             return hasLocalDraft ? current : remote.dailySlip!;
           });
         }
-        setSlipHistory(remote.slipHistory.filter((slip) => isAfterStatsReset(slip.publishedAt)));
+        const normalizedSlipHistory = remote.slipHistory
+          .filter((slip) => isAfterStatsReset(slip.publishedAt))
+          .map((slip) => {
+            const recalculated = slip.settlementStatus === "pending" ? slip : recalculateSlip(slip, normalizedRemotePicks, remote.votes).slip;
+            const override = localSlipOverrides[slip.id];
+            return override ? { ...recalculated, ...override } : recalculated;
+          });
+        setSlipHistory(normalizedSlipHistory);
         setSyncStatus("ready");
       } catch (error) {
         console.error("Failed to load Supabase state", error);
@@ -844,7 +853,7 @@ export function App() {
       mounted = false;
       window.clearInterval(refreshTimer);
     };
-  }, [authProfile, isLoggedIn, isOverlayRoute, localPickOverrides]);
+  }, [authProfile, isLoggedIn, isOverlayRoute, localPickOverrides, localSlipOverrides]);
 
   useEffect(() => {
     document.body.classList.toggle("overlay-body", isOverlayRoute);
@@ -1386,6 +1395,12 @@ export function App() {
 
     setPicks(nextPicksWithProfit);
     setSlipHistory((current) => current.map((item) => (item.id === slipId && recalculatedSlip ? recalculatedSlip : item)));
+    if (recalculatedSlip) {
+      setLocalSlipOverrides((current) => ({
+        ...current,
+        [slipId]: { settlementStatus: recalculatedSlip!.settlementStatus, profit: recalculatedSlip!.profit }
+      }));
+    }
     if (slip.generatedAt === dailySlip.generatedAt && recalculatedSlip) {
       setDailySlip((current) => ({ ...current, settlementStatus: recalculatedSlip!.settlementStatus, profit: recalculatedSlip!.profit }));
     }
@@ -1419,6 +1434,7 @@ export function App() {
     setSlipHistory((current) =>
       current.map((item) => (item.id === slipId ? nextSlip : item))
     );
+    setLocalSlipOverrides((current) => ({ ...current, [slipId]: { settlementStatus: nextSlip.settlementStatus, profit: nextSlip.profit } }));
     if (slip.generatedAt === dailySlip.generatedAt) {
       setDailySlip((current) => ({ ...current, settlementStatus: nextSlip.settlementStatus, profit: nextSlip.profit }));
     }
@@ -1441,6 +1457,7 @@ export function App() {
     setSlipHistory((current) =>
       current.map((item) => (item.id === slipId ? nextSlip : item))
     );
+    setLocalSlipOverrides((current) => ({ ...current, [slipId]: { settlementStatus: nextSlip.settlementStatus, profit: nextSlip.profit } }));
     if (slip.generatedAt === dailySlip.generatedAt) {
       setDailySlip((current) => ({ ...current, settlementStatus: nextSlip.settlementStatus, profit: nextSlip.profit }));
     }
