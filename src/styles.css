@@ -2174,14 +2174,66 @@ h1 {
   display: block;
 }
 
+.reason-heading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
 .group-reasons strong {
   color: var(--lime);
   font-size: 0.76rem;
-  margin-bottom: 3px;
+  margin-bottom: 0;
 }
 
 .group-reasons span {
   color: var(--muted);
+}
+
+.reason-heading button,
+.reason-editor button {
+  align-items: center;
+  background: rgba(183, 255, 52, 0.1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--lime);
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 900;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 9px;
+}
+
+.reason-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.reason-editor textarea {
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  min-height: 76px;
+  padding: 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.reason-editor textarea:focus {
+  border-color: var(--lime);
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+.reason-editor div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .pick-meta {

@@ -435,6 +435,15 @@ export async function updatePickStake(pickId: string, stake: number) {
   if (error) throw error;
 }
 
+export async function updatePickReason(pickId: string, reason: string) {
+  if (!supabase) return;
+  const { error } = await supabase.rpc("update_own_pick_reason", {
+    p_pick_id: pickId,
+    p_reason: reason
+  });
+  if (error) throw error;
+}
+
 export async function updatePickSettlement(pickId: string, status: PickStatus, profit: number) {
   if (!supabase) return;
   const { error } = await supabase

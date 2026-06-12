@@ -7,7 +7,9 @@ import {
   Gauge,
   LineChart,
   LogIn,
+  Pencil,
   RefreshCw,
+  Save,
   ShieldCheck,
   Sparkles,
   ThumbsDown,
@@ -33,7 +35,7 @@ import {
 import { fetchMatchesForDates } from "./sportsApi";
 import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { deletePick, ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickSettlement, updatePickStake, updateProfileAvatar } from "./supabaseData";
+import { deletePick, ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickReason, updatePickSettlement, updatePickStake, updateProfileAvatar } from "./supabaseData";
 import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -728,6 +730,7 @@ export function App() {
   const [communityMatchFilter, setCommunityMatchFilter] = useState("all");
   const [communityMatchSearch, setCommunityMatchSearch] = useState("");
   const [communitySortMode, setCommunitySortMode] = useState<PickGroupSortMode>("recent");
+  const [editingReason, setEditingReason] = useState<{ pickId: string; value: string } | null>(null);
   const [formState, setFormState] = useState({
     marketType: "1X2" as MarketType,
     selection: "",
@@ -1703,6 +1706,37 @@ export function App() {
     }
   }
 
+  function canEditPickReason(pick: Pick) {
+    return pick.userId === activeUserId && pick.status === "pending" && isPickBeforeKickoff(pick);
+  }
+
+  function beginEditPickReason(pick: Pick) {
+    if (!canEditPickReason(pick)) return;
+    setEditingReason({ pickId: pick.id, value: normalizeFilterText(pick.reason).startsWith("sem justificacao") ? "" : pick.reason });
+  }
+
+  function cancelEditPickReason(pickId: string) {
+    setEditingReason((current) => current?.pickId === pickId ? null : current);
+  }
+
+  function savePickReasonEdit(pickId: string) {
+    const edit = editingReason?.pickId === pickId ? editingReason : null;
+    const pick = picks.find((item) => item.id === pickId);
+    if (!edit || !pick || !canEditPickReason(pick)) return;
+    const nextReason = edit.value.trim() || "Sem justificação.";
+    setPicks((current) => current.map((item) => item.id === pickId ? { ...item, reason: nextReason } : item));
+    setEditingReason(null);
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void updatePickReason(pickId, nextReason)
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to update pick reason", error);
+          setSyncStatus("error");
+        });
+    }
+  }
+
   function renderPickGroupCard(group: PickGroup) {
     const pick = group.representative;
     const match = matches.find((item) => item.id === pick.matchId);
@@ -1714,7 +1748,10 @@ export function App() {
         .map((voteItem) => voteItem.type)
     );
     const uniqueReasons = group.picks
-      .filter((groupPick) => groupPick.reason.trim() && !normalizeFilterText(groupPick.reason).startsWith("sem justificacao"))
+      .filter((groupPick) => {
+        const hasReason = groupPick.reason.trim() && !normalizeFilterText(groupPick.reason).startsWith("sem justificacao");
+        return hasReason || canEditPickReason(groupPick);
+      })
       .map((groupPick) => ({ pick: groupPick, author: userById(groupPick.userId) }));
 
     return (
@@ -1759,12 +1796,44 @@ export function App() {
           </div>
           {uniqueReasons.length > 0 ? (
             <div className="group-reasons">
-              {uniqueReasons.map(({ pick: reasonPick, author }) => (
-                <blockquote key={reasonPick.id}>
-                  <strong>{author.displayName}</strong>
-                  <span>{reasonPick.reason}</span>
-                </blockquote>
-              ))}
+              {uniqueReasons.map(({ pick: reasonPick, author }) => {
+                const isEditing = editingReason?.pickId === reasonPick.id;
+                const canEditReason = canEditPickReason(reasonPick);
+                const reasonText = normalizeFilterText(reasonPick.reason).startsWith("sem justificacao") ? "Sem justificação." : reasonPick.reason;
+                return (
+                  <blockquote key={reasonPick.id}>
+                    <div className="reason-heading">
+                      <strong>{author.displayName}</strong>
+                      {canEditReason && !isEditing ? (
+                        <button type="button" onClick={() => beginEditPickReason(reasonPick)}>
+                          <Pencil size={14} />
+                          Editar
+                        </button>
+                      ) : null}
+                    </div>
+                    {isEditing ? (
+                      <div className="reason-editor">
+                        <textarea
+                          value={editingReason.value}
+                          placeholder="Escreve a tua justificação..."
+                          onChange={(event) => setEditingReason({ pickId: reasonPick.id, value: event.target.value })}
+                        />
+                        <div>
+                          <button type="button" onClick={() => savePickReasonEdit(reasonPick.id)}>
+                            <Save size={14} />
+                            Guardar
+                          </button>
+                          <button type="button" onClick={() => cancelEditPickReason(reasonPick.id)}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <span>{reasonText}</span>
+                    )}
+                  </blockquote>
+                );
+              })}
             </div>
           ) : (
             <p>Sem justificação.</p>
