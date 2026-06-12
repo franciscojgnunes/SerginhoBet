@@ -1046,6 +1046,24 @@ h1 {
   box-shadow: inset 4px 0 0 var(--lime);
 }
 
+.viewer-slip-state.open {
+  background:
+    linear-gradient(120deg, rgba(183, 255, 52, 0.18), rgba(22, 215, 130, 0.08)),
+    #07150e;
+  border-color: var(--lime);
+  box-shadow:
+    inset 4px 0 0 var(--lime),
+    0 18px 50px rgba(183, 255, 52, 0.08);
+}
+
+.viewer-slip-state.settled {
+  background:
+    linear-gradient(120deg, rgba(22, 215, 130, 0.13), rgba(255, 255, 255, 0.03)),
+    #07150e;
+  border-color: rgba(22, 215, 130, 0.42);
+  box-shadow: inset 4px 0 0 #16d782;
+}
+
 .viewer-slip-state strong {
   color: var(--text);
 }

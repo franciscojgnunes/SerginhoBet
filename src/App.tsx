@@ -2387,7 +2387,32 @@ function ViewerBetsPage({
   const resolvedPicks = picks
     .filter((pick) => pick.status !== "pending")
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-  const publishedStatusLabel = isPublished ? statusLabel(dailySlip.settlementStatus) : "Ainda nao registada";
+  const isSettledSlip = isPublished && dailySlip.settlementStatus !== "pending";
+  const finalGamesStillOpen = isPublished && finalPicks.every((pick) => {
+    const match = matches.find((item) => item.id === pick.matchId);
+    return Boolean(match) && match?.status === "scheduled" && new Date(match.startsAt).getTime() > Date.now();
+  });
+  const isOpenSlip = isPublished && dailySlip.settlementStatus === "pending" && finalGamesStillOpen;
+  const viewerSlipTitle = isSettledSlip ? "Ultima aposta" : isOpenSlip ? "Aposta aberta" : "Aposta da comunidade";
+  const publishedStatusLabel = isPublished
+    ? isOpenSlip
+      ? "Aberta"
+      : statusLabel(dailySlip.settlementStatus)
+    : "Ainda nao registada";
+  const viewerSlipStateTitle = isPublished
+    ? isSettledSlip
+      ? "Ultima aposta publicada pelo SerginhoEsteves"
+      : isOpenSlip
+        ? "Boletim aberto para a comunidade"
+        : "Boletim publicado pelo SerginhoEsteves"
+    : "O streamer ainda nao publicou a aposta final";
+  const viewerSlipStateCopy = isPublished
+    ? isSettledSlip
+      ? `${slipModeLabel} resolvida como ${statusLabel(dailySlip.settlementStatus).toLowerCase()} com ${finalPicks.length} tips finais.`
+      : isOpenSlip
+        ? `${slipModeLabel} com ${finalPicks.length} tips finais. Os jogos ainda nao comecaram e a comunidade ainda pode acompanhar a aposta.`
+        : `${slipModeLabel} com ${finalPicks.length} tips finais.`
+    : "Quando for publicado, aparece aqui o tipo de aposta, stake, odd e as tuas tips escolhidas.";
   const [expandedSlipIds, setExpandedSlipIds] = useState<Set<string>>(() => new Set());
 
   function toggleExpandedSlip(slipId: string) {
@@ -2436,16 +2461,12 @@ function ViewerBetsPage({
     <section className="viewer-bets-page">
       <section className="panel viewer-slip-panel">
         <div className="section-title spread">
-          <div><ShieldCheck size={18} /><h3>Aposta da comunidade</h3></div>
+          <div><ShieldCheck size={18} /><h3>{viewerSlipTitle}</h3></div>
           <span>{publishedStatusLabel}</span>
         </div>
-        <div className={`viewer-slip-state ${isPublished ? "published" : "draft"}`}>
-          <strong>{isPublished ? "Boletim publicado pelo SerginhoEsteves" : "O streamer ainda nao publicou a aposta final"}</strong>
-          <p>
-            {isPublished
-              ? `${slipModeLabel} com ${finalPicks.length} tips finais.`
-              : "Quando for publicado, aparece aqui o tipo de aposta, stake, odd e as tuas tips escolhidas."}
-          </p>
+        <div className={`viewer-slip-state ${isPublished ? "published" : "draft"} ${isOpenSlip ? "open" : ""} ${isSettledSlip ? "settled" : ""}`}>
+          <strong>{viewerSlipStateTitle}</strong>
+          <p>{viewerSlipStateCopy}</p>
         </div>
         <div className="viewer-slip-metrics">
           <span>Tipo <b>{slipModeLabel}</b></span>
