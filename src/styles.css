@@ -2767,6 +2767,11 @@ h1 {
   min-width: 0;
 }
 
+.individual-stats-table .stats-table-head,
+.individual-stats-table .stats-table-row {
+  grid-template-columns: minmax(160px, 1.45fr) repeat(2, minmax(48px, 0.48fr)) minmax(62px, 0.58fr) minmax(70px, 0.62fr) minmax(52px, 0.48fr);
+}
+
 .stats-table-head {
   background: rgba(14, 36, 24, 0.98);
   color: var(--muted);

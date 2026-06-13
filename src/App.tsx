@@ -613,6 +613,26 @@ function buildResultTimeline(picks: Pick[], slips: SlipHistoryItem[], filter: (v
     });
 }
 
+function buildIndividualPickTimeline(picks: Pick[], filter: (value: string) => boolean): ChartPoint[] {
+  let cumulative = 0;
+  let cumulativeStake = 0;
+  return picks
+    .filter((pick) => pick.status !== "pending" && filter(pick.createdAt))
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+    .map((pick) => {
+      cumulative = roundUnits(cumulative + pick.profit);
+      cumulativeStake = roundUnits(cumulativeStake + pick.stake);
+      return {
+        label: new Date(pick.createdAt).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" }),
+        profit: pick.profit,
+        stake: pick.stake,
+        cumulative,
+        cumulativeStake,
+        roi: cumulativeStake > 0 ? roundUnits((cumulative / cumulativeStake) * 100) : 0
+      };
+    });
+}
+
 function buildLeaderboard(scope: StatsScope) {
   return runtimeUsers
     .map((user) => {
@@ -1156,6 +1176,14 @@ export function App() {
     () => buildStatsScope("Geral", allStoredPicks, allStoredSlips, () => true),
     [allStoredPicks, allStoredSlips]
   );
+  const individualMonthScope = useMemo(
+    () => buildStatsScope("Individuais", allStoredPicks, [], (value) => value.slice(0, 7) === monthKey),
+    [allStoredPicks, monthKey]
+  );
+  const individualAllTimeScope = useMemo(
+    () => buildStatsScope("Individuais", allStoredPicks, [], () => true),
+    [allStoredPicks]
+  );
   const settledCommunitySlips = allStoredSlips.filter((slip) => slip.settlementStatus !== "pending");
   const communitySlipProfit = roundUnits(settledCommunitySlips.reduce((total, slip) => total + slip.profit, 0));
   const communitySlipStake = roundUnits(settledCommunitySlips.reduce((total, slip) => {
@@ -1184,6 +1212,10 @@ export function App() {
   const allTimeProfitTimeline = useMemo(
     () => buildResultTimeline(allStoredPicks, allStoredSlips, () => true),
     [allStoredPicks, allStoredSlips]
+  );
+  const individualProfitTimeline = useMemo(
+    () => buildIndividualPickTimeline(allStoredPicks, () => true),
+    [allStoredPicks]
   );
   const displayedProfitTimeline = dayProfitTimeline;
   const displayedDayScope = dayScope;
@@ -2306,9 +2338,12 @@ export function App() {
           dayScope={displayedDayScope}
           monthScope={monthScope}
           allTimeScope={allTimeScope}
+          individualMonthScope={individualMonthScope}
+          individualAllTimeScope={individualAllTimeScope}
           dayTimeline={displayedProfitTimeline}
           monthTimeline={monthProfitTimeline}
           allTimeTimeline={allTimeProfitTimeline}
+          individualTimeline={individualProfitTimeline}
           monthlyLeaderboard={leaderboard}
           generalLeaderboard={generalLeaderboard}
           bankroll={communityBankroll}
@@ -3549,9 +3584,12 @@ function StatsDashboard({
   dayScope,
   monthScope,
   allTimeScope,
+  individualMonthScope,
+  individualAllTimeScope,
   dayTimeline,
   monthTimeline,
   allTimeTimeline,
+  individualTimeline,
   monthlyLeaderboard,
   generalLeaderboard,
   bankroll,
@@ -3560,9 +3598,12 @@ function StatsDashboard({
   dayScope: StatsScope;
   monthScope: StatsScope;
   allTimeScope: StatsScope;
+  individualMonthScope: StatsScope;
+  individualAllTimeScope: StatsScope;
   dayTimeline: ChartPoint[];
   monthTimeline: ChartPoint[];
   allTimeTimeline: ChartPoint[];
+  individualTimeline: ChartPoint[];
   monthlyLeaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
   generalLeaderboard: Array<{ user: User; picks: number; profit: number; roi: number; winrate: number }>;
   bankroll: ReturnType<typeof calculateBankroll>;
@@ -3615,15 +3656,38 @@ function StatsDashboard({
         <ProfitChart points={allTimeTimeline} title="Evolucao do ROI geral" />
       </section>
 
+      <section className="panel stats-hero-panel">
+        <div className="section-title spread">
+          <div><LineChart size={18} /><h3>Apostas individuais</h3></div>
+          <span>Sem all-in do streamer</span>
+        </div>
+        <StatsMetricGrid scope={individualAllTimeScope} mode="individual" />
+        <ProfitChart points={individualTimeline} title="Lucro acumulado individual" subtitle="Apenas picks pessoais resolvidas, sem boletins all-in" metric="profit" />
+      </section>
+
       <StatsTable title={`Performance de ${monthName}`} scope={monthScope} />
       <StatsTable title="Performance geral" scope={allTimeScope} />
+      <StatsTable title={`Performance individual de ${monthName}`} scope={individualMonthScope} mode="individual" />
+      <StatsTable title="Performance individual geral" scope={individualAllTimeScope} mode="individual" />
       <LeaderboardPanel title={`Leaderboard de ${monthName}`} leaderboard={monthlyLeaderboard} />
       <LeaderboardPanel title="Leaderboard geral" leaderboard={generalLeaderboard} />
     </section>
   );
 }
 
-function StatsMetricGrid({ scope, bankroll }: { scope: StatsScope; bankroll?: ReturnType<typeof calculateBankroll> }) {
+function StatsMetricGrid({ scope, bankroll, mode = "community" }: { scope: StatsScope; bankroll?: ReturnType<typeof calculateBankroll>; mode?: "community" | "individual" }) {
+  if (mode === "individual") {
+    return (
+      <div className="stat-grid wide">
+        <span>Tips pessoais <b>{scope.total.submitted}</b></span>
+        <span>Resolvidas <b>{scope.total.settled}</b></span>
+        <span>Stake fechada <b>{scope.total.staked.toFixed(2)}u</b></span>
+        <span>Lucro individual <b>{scope.total.profit >= 0 ? "+" : ""}{scope.total.profit.toFixed(2)}u</b></span>
+        <span>ROI individual <b>{scope.total.roi.toFixed(1)}%</b></span>
+      </div>
+    );
+  }
+
   return (
     <div className="stat-grid wide">
       <span>Tips submetidas <b>{scope.total.submitted}</b></span>
@@ -3642,7 +3706,7 @@ function StatsMetricGrid({ scope, bankroll }: { scope: StatsScope; bankroll?: Re
   );
 }
 
-function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
+function StatsTable({ title, scope, mode = "community" }: { title: string; scope: StatsScope; mode?: "community" | "individual" }) {
   const rankedRows = runtimeUsers
     .map((user) => ({
       user,
@@ -3670,13 +3734,13 @@ function StatsTable({ title, scope }: { title: string; scope: StatsScope }) {
         <div><Trophy size={18} /><h3>{title}</h3></div>
         <span>Ranking por ROI</span>
       </div>
-      <div className="stats-table">
-        <div className="stats-table-head"><span>Pessoa</span><span>Tips</span><span>Finais</span><span>Resolvidas</span><span>Stake</span><span>Lucro</span><span>ROI</span></div>
+      <div className={`stats-table ${mode === "individual" ? "individual-stats-table" : ""}`}>
+        <div className="stats-table-head"><span>Pessoa</span><span>Tips</span>{mode === "community" ? <span>Finais</span> : null}<span>Resolvidas</span><span>Stake</span><span>Lucro</span><span>ROI</span></div>
         {rankedRows.length > 0 ? rankedRows.map(({ user, row }) => (
           <div className="stats-table-row" key={user.id}>
             <span className="viewer-cell"><Avatar user={user} /> {user.displayName}</span>
             <span>{row.submitted}</span>
-            <span>{row.selected}</span>
+            {mode === "community" ? <span>{row.selected}</span> : null}
             <span>{row.settled}</span>
             <span>{row.staked.toFixed(2)}u</span>
             <b className={row.profit < 0 ? "negative-value" : "positive-value"}>{row.profit >= 0 ? "+" : ""}{row.profit.toFixed(2)}u</b>
@@ -3809,7 +3873,17 @@ function StatsPage({
   );
 }
 
-function ProfitChart({ points, title }: { points: ChartPoint[]; title: string }) {
+function ProfitChart({
+  points,
+  title,
+  subtitle = "ROI acumulado por aposta resolvida",
+  metric = "roi"
+}: {
+  points: ChartPoint[];
+  title: string;
+  subtitle?: string;
+  metric?: "roi" | "profit";
+}) {
   if (points.length === 0) return <div className="chart-empty">Ainda nao ha apostas resolvidas para desenhar evolucao.</div>;
 
   const width = 760;
@@ -3817,31 +3891,36 @@ function ProfitChart({ points, title }: { points: ChartPoint[]; title: string })
   const paddingX = 48;
   const paddingTop = 30;
   const paddingBottom = 42;
-  const values = points.map((point) => point.roi);
+  const values = points.map((point) => metric === "profit" ? point.cumulative : point.roi);
   const min = Math.min(0, ...values);
   const max = Math.max(0, ...values);
-  const paddedMin = min === max ? min - 5 : Math.floor((min - 4) / 5) * 5;
-  const paddedMax = min === max ? max + 5 : Math.ceil((max + 4) / 5) * 5;
+  const padSize = metric === "profit" ? 1 : 5;
+  const paddedMin = min === max ? min - padSize : Math.floor((min - padSize) / padSize) * padSize;
+  const paddedMax = min === max ? max + padSize : Math.ceil((max + padSize) / padSize) * padSize;
   const range = paddedMax - paddedMin || 1;
   const coords = points.map((point, index) => {
     const x = paddingX + (index / Math.max(points.length - 1, 1)) * (width - paddingX * 2);
-    const y = height - paddingBottom - ((point.roi - paddedMin) / range) * (height - paddingTop - paddingBottom);
+    const value = metric === "profit" ? point.cumulative : point.roi;
+    const y = height - paddingBottom - ((value - paddedMin) / range) * (height - paddingTop - paddingBottom);
     return { ...point, x, y };
   });
   const path = coords.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
   const zeroY = height - paddingBottom - ((0 - paddedMin) / range) * (height - paddingTop - paddingBottom);
   const finalPoint = points[points.length - 1];
+  const finalValue = metric === "profit" ? finalPoint.cumulative : finalPoint.roi;
   const guideValues = [paddedMax, roundUnits((paddedMax + paddedMin) / 2), paddedMin];
   const labelEvery = Math.max(1, Math.ceil(points.length / 5));
+  const formatChartValue = (value: number) => metric === "profit" ? `${value.toFixed(0)}u` : `${value.toFixed(0)}%`;
+  const formatFinalValue = (value: number) => metric === "profit" ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}u` : `${value.toFixed(1)}%`;
 
   return (
     <div className="chart-wrap">
       <div className="chart-summary">
         <div>
           <strong>{title}</strong>
-          <span>ROI acumulado por aposta resolvida</span>
+          <span>{subtitle}</span>
         </div>
-        <b className={finalPoint.roi < 0 ? "negative-value" : "positive-value"}>{finalPoint.roi.toFixed(1)}%</b>
+        <b className={finalValue < 0 ? "negative-value" : "positive-value"}>{formatFinalValue(finalValue)}</b>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
         {guideValues.map((value, index) => {
@@ -3849,7 +3928,7 @@ function ProfitChart({ points, title }: { points: ChartPoint[]; title: string })
           return (
             <g key={`${value}-${index}`}>
               <line className="chart-grid" x1={paddingX} x2={width - paddingX} y1={y} y2={y} />
-              <text className="chart-y-label" x={12} y={y + 4}>{value.toFixed(0)}%</text>
+              <text className="chart-y-label" x={12} y={y + 4}>{formatChartValue(value)}</text>
             </g>
           );
         })}
@@ -3857,9 +3936,10 @@ function ProfitChart({ points, title }: { points: ChartPoint[]; title: string })
         <path className="chart-line" d={path} />
         {coords.map((point, index) => {
           const showLabel = index === 0 || index === coords.length - 1 || index % labelEvery === 0;
+          const pointValue = metric === "profit" ? point.cumulative : point.roi;
           return (
           <g key={`${point.label}-${point.cumulative}-${index}`}>
-            <circle className={point.roi >= 0 ? "chart-dot positive" : "chart-dot negative"} cx={point.x} cy={point.y} r="5" />
+            <circle className={pointValue >= 0 ? "chart-dot positive" : "chart-dot negative"} cx={point.x} cy={point.y} r="5" />
             {showLabel ? <text className="chart-x-label" x={point.x} y={height - 12} textAnchor="middle">{point.label}</text> : null}
           </g>
           );
