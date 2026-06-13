@@ -35,7 +35,7 @@ import {
 import { fetchMatchesForDates } from "./sportsApi";
 import { fetchTodayOdds } from "./oddsApi";
 import { getSiteUrl, isSupabaseConfigured, supabase } from "./supabaseClient";
-import { deletePick, ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickReason, updatePickSettlement, updatePickStake, updateProfileAvatar } from "./supabaseData";
+import { cancelOwnPick, deletePick, ensureLeagueMember, loadRemoteState, saveMatches, saveOdds, savePick, saveProfile, saveSettlement, saveSlip, saveVote, updatePickOdds, updatePickReason, updatePickSettlement, updatePickStake, updateProfileAvatar } from "./supabaseData";
 import type { DailySlip, League, MarketType, Match, MatchOdd, Pick, PickStatus, SlipHistoryItem, User, Vote as VoteRecord, VoteType } from "./types";
 
 const currentDate = new Date();
@@ -1668,6 +1668,37 @@ export function App() {
     }
   }
 
+  function canCancelOwnPick(pick: Pick) {
+    const isInPublishedSlip = slipHistory.some((slip) => slip.pickIds.includes(pick.id));
+    return pick.userId === activeUserId && pick.status === "pending" && isPickBeforeKickoff(pick) && !dailySlip.pickIds.includes(pick.id) && !isInPublishedSlip;
+  }
+
+  function removePickLocally(pickId: string) {
+    setPicks((current) => current.filter((pick) => pick.id !== pickId));
+    setVotes((current) => current.filter((voteItem) => voteItem.pickId !== pickId));
+    setDailySlip((current) => ({ ...current, pickIds: current.pickIds.filter((id) => id !== pickId) }));
+    setSlipHistory((current) => current.map((slip) => ({ ...slip, pickIds: slip.pickIds.filter((id) => id !== pickId) })));
+    setLocalPickOverrides((current) => ({ ...current, [pickId]: null }));
+  }
+
+  function cancelViewerPick(pick: Pick) {
+    if (!canCancelOwnPick(pick)) return;
+    removePickLocally(pick.id);
+    setPopup({
+      title: "Tip cancelada",
+      body: "A tua tip saiu da comunidade e deixou de contar para votos ou boletins futuros."
+    });
+    if (isSupabaseConfigured) {
+      setSyncStatus("saving");
+      void cancelOwnPick(pick.id)
+        .then(() => setSyncStatus("ready"))
+        .catch((error) => {
+          console.error("Failed to cancel own pick", error);
+          setSyncStatus("error");
+        });
+    }
+  }
+
   function confirmPendingSettlement() {
     if (!pendingSettlement) return;
     if (pendingSettlement.kind === "combined") {
@@ -1818,16 +1849,26 @@ export function App() {
               {uniqueReasons.map(({ pick: reasonPick, author }) => {
                 const isEditing = editingReason?.pickId === reasonPick.id;
                 const canEditReason = canEditPickReason(reasonPick);
+                const canCancelPick = canCancelOwnPick(reasonPick);
                 const reasonText = normalizeFilterText(reasonPick.reason).startsWith("sem justificacao") ? "Sem justificação." : reasonPick.reason;
                 return (
                   <blockquote key={reasonPick.id}>
                     <div className="reason-heading">
                       <strong>{author.displayName}</strong>
-                      {canEditReason && !isEditing ? (
-                        <button type="button" onClick={() => beginEditPickReason(reasonPick)}>
-                          <Pencil size={14} />
-                          Editar
-                        </button>
+                      {(canEditReason || canCancelPick) && !isEditing ? (
+                        <div className="reason-actions">
+                          {canEditReason ? (
+                            <button type="button" onClick={() => beginEditPickReason(reasonPick)}>
+                              <Pencil size={14} />
+                              Editar
+                            </button>
+                          ) : null}
+                          {canCancelPick ? (
+                            <button className="danger-action" type="button" onClick={() => cancelViewerPick(reasonPick)}>
+                              Cancelar tip
+                            </button>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                     {isEditing ? (

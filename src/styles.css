@@ -2186,6 +2186,13 @@ h1 {
   margin-bottom: 4px;
 }
 
+.reason-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .group-reasons strong {
   color: var(--lime);
   font-size: 0.76rem;

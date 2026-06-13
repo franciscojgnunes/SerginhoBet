@@ -444,6 +444,14 @@ export async function updatePickReason(pickId: string, reason: string) {
   if (error) throw error;
 }
 
+export async function cancelOwnPick(pickId: string) {
+  if (!supabase) return;
+  const { error } = await supabase.rpc("cancel_own_pick", {
+    p_pick_id: pickId
+  });
+  if (error) throw error;
+}
+
 export async function updatePickSettlement(pickId: string, status: PickStatus, profit: number) {
   if (!supabase) return;
   const { error } = await supabase
