@@ -230,10 +230,11 @@ function buildPickGroups(picks: Pick[], votes: VoteRecord[], sortMode: PickGroup
 
   const groups = Array.from(grouped.entries()).map(([key, groupPicks]) => {
     const orderedPicks = [...groupPicks].sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+    const averageOdds = roundUnits(orderedPicks.reduce((total, pick) => total + pick.odds, 0) / Math.max(orderedPicks.length, 1));
     return {
       key,
       picks: orderedPicks,
-      representative: orderedPicks[0],
+      representative: { ...orderedPicks[0], odds: averageOdds },
       score: orderedPicks.reduce((total, pick) => total + scorePick(pick.id, votes), 0),
       authors: Array.from(new Set(orderedPicks.map((pick) => pick.userId))).map(userById)
     };
@@ -1200,9 +1201,9 @@ export function App() {
     writeStoredValue(seenKey, true);
     setPopup({
       title: "Boletim publicado",
-      body: `O SerginhoEsteves publicou a aposta da comunidade com ${topSlipPicks.length} picks finais. Ainda vais a tempo de ver antes dos jogos comecarem.`
+      body: `O SerginhoEsteves publicou a aposta da comunidade com ${topSlipPickGroups.length} picks finais. Ainda vais a tempo de ver antes dos jogos comecarem.`
     });
-  }, [activeUserId, dailySlip.generatedAt, dailySlip.status, isLoggedIn, isStreamer, matches, topSlipPicks]);
+  }, [activeUserId, dailySlip.generatedAt, dailySlip.status, isLoggedIn, isStreamer, matches, topSlipPickGroups.length, topSlipPicks]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setKickoffCheckAt(Date.now()), 30_000);
@@ -2172,7 +2173,7 @@ export function App() {
               <section className="panel streamer-control">
                 <div className="section-title spread">
                   <div><Sparkles size={18} /><h3>Painel streamer</h3></div>
-                  <span>{dailySlip.pickIds.length} finais</span>
+                  <span>{visibleTopSlipPickGroups.length} finais</span>
                 </div>
                 <div className="control-actions">
                   <button onClick={generateSlip}><Sparkles size={16} />Preencher por votos</button>
@@ -2269,6 +2270,7 @@ export function App() {
           matches={matches}
           combinedOdds={selectedResolveCombinedOdds}
           selectedSlipId={selectedResolveSlipId}
+          votes={votes}
           onSelectSlip={setSelectedResolveSlipId}
           onUpdateOdd={updateSlipPickOdds}
           onSettlePick={(slipId, pickId, status) => setPendingSettlement({ kind: "pick", slipId, pickId, status })}
@@ -2584,6 +2586,7 @@ function ViewerBetsPage({
   votes: VoteRecord[];
 }) {
   const finalPickIds = new Set(finalPicks.map((pick) => pick.id));
+  const finalPickGroups = buildPickGroups(finalPicks, votes);
   const userFinalPicks = finalPicks.filter((pick) => pick.userId === user.id);
   const isPublished = dailySlip.status === "published" && finalPicks.length > 0;
   const combinedShare = userFinalPicks.length > 0 && finalPicks.length > 0
@@ -2626,10 +2629,10 @@ function ViewerBetsPage({
     : "O streamer ainda nao publicou a aposta final";
   const viewerSlipStateCopy = isPublished
     ? isSettledSlip
-      ? `${slipModeLabel} resolvida como ${statusLabel(dailySlip.settlementStatus).toLowerCase()} com ${finalPicks.length} tips finais.`
+      ? `${slipModeLabel} resolvida como ${statusLabel(dailySlip.settlementStatus).toLowerCase()} com ${finalPickGroups.length} tips finais.`
       : isOpenSlip
-        ? `${slipModeLabel} com ${finalPicks.length} tips finais. Os jogos ainda nao comecaram e a comunidade ainda pode acompanhar a aposta.`
-        : `${slipModeLabel} com ${finalPicks.length} tips finais.`
+        ? `${slipModeLabel} com ${finalPickGroups.length} tips finais. Os jogos ainda nao comecaram e a comunidade ainda pode acompanhar a aposta.`
+        : `${slipModeLabel} com ${finalPickGroups.length} tips finais.`
     : "Quando for publicado, aparece aqui o tipo de aposta, stake, odd e as tuas tips escolhidas.";
   const [expandedSlipIds, setExpandedSlipIds] = useState<Set<string>>(() => new Set());
 
@@ -2697,17 +2700,17 @@ function ViewerBetsPage({
             <div className="viewer-final-expanded">
               <div className="viewer-final-heading">
                 <strong>Jogos do boletim</strong>
-                <span>{finalPicks.length}</span>
+                <span>{finalPickGroups.length}</span>
               </div>
-                {finalPicks.map((pick, index) => {
+                {finalPickGroups.map((group, index) => {
+                  const pick = group.representative;
                   const match = matches.find((item) => item.id === pick.matchId);
-                  const author = userById(pick.userId);
                   return (
-                    <article className="viewer-final-card" key={pick.id}>
-                      <small>#{index + 1} - {author.displayName}</small>
+                    <article className="viewer-final-card" key={group.key}>
+                      <small>#{index + 1} - {group.authors.map((author) => author.displayName).join(", ")}</small>
                       <strong>{pick.selection}</strong>
                       <MatchMiniCard match={match} />
-                      <small>@{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
+                      <small>@{pick.odds.toFixed(2)} media - Score {group.score} - {group.picks.length} pessoas</small>
                     </article>
                   );
                 })}
@@ -2925,19 +2928,20 @@ function HistoryPage({
   }
 
   function renderSlipDetailList(slip: SlipHistoryItem) {
+    const slipPicks = getSlipPicks(slip, allPicks);
+    const slipGroups = buildPickGroups(slipPicks, votes);
     return (
       <div className="slip-detail-list">
-        {slip.pickIds.map((pickId, index) => {
-          const pick = allPicks.find((item) => item.id === pickId);
-          if (!pick) return null;
+        {slipGroups.map((group, index) => {
+          const pick = group.representative;
           const match = matches.find((item) => item.id === pick.matchId);
-          const author = userById(pick.userId);
+          const authorNames = group.authors.map((author) => author.displayName).join(", ");
           return (
-            <div className="slip-detail-row" key={pick.id}>
+            <div className="slip-detail-row" key={group.key}>
               <span>{index + 1}</span>
               <div>
                 <strong>{pick.selection}</strong>
-                <small>{author.displayName} - @{pick.odds.toFixed(2)} - Score {scorePick(pick.id, votes)}</small>
+                <small>{authorNames} - @{pick.odds.toFixed(2)} media - Score {group.score} - {group.picks.length} pessoas</small>
                 {canEditOdds && onUpdateOdd ? (
                   <label className="settlement-odd-field">
                     Odd final
@@ -2946,7 +2950,7 @@ function HistoryPage({
                       step="0.01"
                       min="1.01"
                       value={pick.odds}
-                      onChange={(event) => onUpdateOdd(slip.id, pick.id, Number(event.target.value))}
+                      onChange={(event) => onUpdateOdd(slip.id, group.picks[0].id, Number(event.target.value))}
                     />
                   </label>
                 ) : null}
@@ -2974,11 +2978,14 @@ function HistoryPage({
         </div>
         <div className="viewer-history-list">
           {slipHistory.map((slip, index) => (
+            (() => {
+              const groupedCount = buildPickGroups(getSlipPicks(slip, allPicks), votes).length;
+              return (
             <article className="slip-history-card" key={slip.id}>
               <button className="viewer-history-row slip-history-row slip-expand-toggle" onClick={() => toggleExpandedSlip(slip.id)}>
                 <div>
                   <strong>Boletim publicado #{slipHistory.length - index}</strong>
-                  <span>{formatSlipDateTime(slip.publishedAt)} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {slip.pickIds.length} picks</span>
+                  <span>{formatSlipDateTime(slip.publishedAt)} - {slip.mode === "combined" ? "Combinada" : "Multiplas"} com {groupedCount} picks</span>
                 </div>
                 <small>{slip.mode === "combined" ? `${slip.combinedStake.toFixed(2)}u` : `${(slip.multiplesStake * slip.pickIds.length).toFixed(2)}u`}</small>
                 <div className={`status ${slip.settlementStatus}`}>{statusLabel(slip.settlementStatus)}</div>
@@ -2986,6 +2993,8 @@ function HistoryPage({
               </button>
               {expandedSlipIds.has(slip.id) ? renderSlipDetailList(slip) : null}
             </article>
+              );
+            })()
           ))}
           {slipHistory.length === 0 ? <p className="empty-copy">Ainda nao existem apostas publicadas no historico.</p> : null}
         </div>
@@ -3297,6 +3306,7 @@ function ResolvePage({
   matches,
   combinedOdds,
   selectedSlipId,
+  votes,
   onSelectSlip,
   onUpdateOdd,
   onSettlePick,
@@ -3308,18 +3318,26 @@ function ResolvePage({
   matches: Match[];
   combinedOdds: number;
   selectedSlipId: string;
+  votes: VoteRecord[];
   onSelectSlip: (slipId: string) => void;
   onUpdateOdd: (slipId: string, pickId: string, odds: number) => void;
   onSettlePick: (slipId: string, pickId: string, status: PickStatus) => void;
   onSettleCombined: (slipId: string, status: PickStatus) => void;
 }) {
   const combinedReturn = selectedSlip ? roundUnits(selectedSlip.combinedStake * combinedOdds) : 0;
+  const orderedGroups = buildPickGroups(picks, votes).sort((left, right) => {
+    const leftPending = left.picks.some((pick) => pick.status === "pending");
+    const rightPending = right.picks.some((pick) => pick.status === "pending");
+    if (leftPending && !rightPending) return -1;
+    if (!leftPending && rightPending) return 1;
+    return new Date(right.representative.createdAt).getTime() - new Date(left.representative.createdAt).getTime();
+  });
   const orderedPicks = [...picks].sort((left, right) => {
     if (left.status === "pending" && right.status !== "pending") return -1;
     if (left.status !== "pending" && right.status === "pending") return 1;
     return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
   });
-  const canResolve = Boolean(selectedSlip) && orderedPicks.length > 0;
+  const canResolve = Boolean(selectedSlip) && orderedGroups.length > 0;
 
   if (!canResolve || !selectedSlip) {
     return (
@@ -3370,15 +3388,15 @@ function ResolvePage({
               <div className={`status ${selectedSlip.settlementStatus}`}>{statusLabel(selectedSlip.settlementStatus)}</div>
             </div>
             <div className="combined-resolve-list">
-              {orderedPicks.map((pick, index) => {
+              {orderedGroups.map((group, index) => {
+                const pick = group.representative;
                 const match = matches.find((item) => item.id === pick.matchId);
-                const author = userById(pick.userId);
                 return (
-                  <div className="combined-resolve-item" key={pick.id}>
+                  <div className="combined-resolve-item" key={group.key}>
                     <span>{index + 1}</span>
                     <div>
                       <strong>{pick.selection}</strong>
-                      <small>{author.displayName} - @{pick.odds.toFixed(2)}</small>
+                      <small>{group.authors.map((author) => author.displayName).join(", ")} - @{pick.odds.toFixed(2)} media - {group.picks.length} pessoas</small>
                       <label className="settlement-odd-field">
                         Odd final
                         <input
@@ -3386,7 +3404,7 @@ function ResolvePage({
                           step="0.01"
                           min="1.01"
                           value={pick.odds}
-                          onChange={(event) => onUpdateOdd(selectedSlip.id, pick.id, Number(event.target.value))}
+                          onChange={(event) => onUpdateOdd(selectedSlip.id, group.picks[0].id, Number(event.target.value))}
                         />
                       </label>
                     </div>
