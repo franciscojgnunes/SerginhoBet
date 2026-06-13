@@ -708,12 +708,54 @@ function getSlipPicks(slip: SlipHistoryItem, sourcePicks: Pick[]) {
     .filter((pick): pick is Pick => Boolean(pick));
 }
 
-function recalculateSlip(slip: SlipHistoryItem, sourcePicks: Pick[], votes: VoteRecord[]) {
+function getSlipStake(slip: SlipHistoryItem) {
+  return slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length;
+}
+
+function calculateCommunityBankrollState(initial: number, slips: SlipHistoryItem[]) {
+  const sortedSlips = [...slips].sort((left, right) => new Date(left.publishedAt).getTime() - new Date(right.publishedAt).getTime());
+  let current = initial;
+  let settledProfit = 0;
+  let settledStake = 0;
+  let exposure = 0;
+
+  for (const slip of sortedSlips) {
+    const stake = getSlipStake(slip) > 0 ? getSlipStake(slip) : current;
+    if (slip.settlementStatus === "pending") {
+      exposure = roundUnits(exposure + stake);
+      continue;
+    }
+
+    settledProfit = roundUnits(settledProfit + slip.profit);
+    settledStake = roundUnits(settledStake + stake);
+    current = slip.settlementStatus === "lost" ? initial : roundUnits(current + slip.profit);
+    if (current <= 0) current = initial;
+  }
+
+  return {
+    initial,
+    current: roundUnits(current),
+    exposure,
+    settledProfit,
+    roi: settledStake > 0 ? roundUnits((settledProfit / settledStake) * 100) : 0
+  };
+}
+
+function getCommunityStakeBeforeSlip(initial: number, slips: SlipHistoryItem[], targetSlipId: string) {
+  const previousSlips = [...slips]
+    .filter((slip) => slip.id !== targetSlipId)
+    .filter((slip) => new Date(slip.publishedAt).getTime() < new Date(slips.find((item) => item.id === targetSlipId)?.publishedAt ?? "").getTime())
+    .filter((slip) => slip.settlementStatus !== "pending");
+  return calculateCommunityBankrollState(initial, previousSlips).current;
+}
+
+function recalculateSlip(slip: SlipHistoryItem, sourcePicks: Pick[], votes: VoteRecord[], forcedStake?: number) {
   const slipPicks = getSlipPicks(slip, sourcePicks);
   if (slip.mode === "combined") {
     const odds = buildPickGroups(slipPicks, votes).reduce((total, group) => total * group.representative.odds, 1);
-    const profit = slip.settlementStatus === "pending" ? 0 : calculateProfit(slip.settlementStatus, slip.combinedStake, odds);
-    return { slip: { ...slip, profit }, picks: slipPicks };
+    const combinedStake = forcedStake ?? slip.combinedStake;
+    const profit = slip.settlementStatus === "pending" ? 0 : calculateProfit(slip.settlementStatus, combinedStake, odds);
+    return { slip: { ...slip, combinedStake, profit }, picks: slipPicks };
   }
 
   const recalculatedPicks = slipPicks.map((pick) => ({
@@ -1184,21 +1226,8 @@ export function App() {
     () => buildStatsScope("Individuais", allStoredPicks, [], () => true),
     [allStoredPicks]
   );
-  const settledCommunitySlips = allStoredSlips.filter((slip) => slip.settlementStatus !== "pending");
-  const communitySlipProfit = roundUnits(settledCommunitySlips.reduce((total, slip) => total + slip.profit, 0));
-  const communitySlipStake = roundUnits(settledCommunitySlips.reduce((total, slip) => {
-    const stake = slip.mode === "combined" ? slip.combinedStake : slip.multiplesStake * slip.pickIds.length;
-    return total + stake;
-  }, 0));
-  const settledBankroll = roundUnits(communityInitialBankroll + communitySlipProfit);
-  const slipExposure = isPublishedSlip && !slipSettled ? settledBankroll : 0;
-  const communityBankroll = {
-    initial: communityInitialBankroll,
-    current: settledBankroll,
-    exposure: slipExposure,
-    settledProfit: communitySlipProfit,
-    roi: communitySlipStake > 0 ? roundUnits((communitySlipProfit / communitySlipStake) * 100) : 0
-  };
+  const communityBankroll = calculateCommunityBankrollState(communityInitialBankroll, allStoredSlips);
+  const settledBankroll = communityBankroll.current;
   const allInStakePreview = Math.max(0, settledBankroll);
   const allInMultiplesUnitStake = visibleTopSlipPickGroups.length > 0 ? roundUnits(allInStakePreview / visibleTopSlipPickGroups.length) : allInStakePreview;
   const dayProfitTimeline = useMemo(
@@ -1605,8 +1634,10 @@ export function App() {
   function settleCombinedSlip(slipId: string, status: PickStatus) {
     const slip = slipHistory.find((item) => item.id === slipId);
     if (!slip) return;
-    const slipWithStatus = { ...slip, settlementStatus: status };
-    const { slip: nextSlip, picks: slipPicks } = recalculateSlip(slipWithStatus, picks, votes);
+    const fallbackStake = getCommunityStakeBeforeSlip(communityInitialBankroll, allStoredSlips, slipId);
+    const combinedStake = slip.combinedStake > 0 ? slip.combinedStake : fallbackStake;
+    const slipWithStatus = { ...slip, combinedStake, settlementStatus: status };
+    const { slip: nextSlip, picks: slipPicks } = recalculateSlip(slipWithStatus, picks, votes, combinedStake);
     setSlipHistory((current) =>
       current.map((item) => (item.id === slipId ? nextSlip : item))
     );
