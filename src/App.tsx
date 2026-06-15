@@ -329,6 +329,37 @@ function mergeById<T extends { id: string }>(items: T[]) {
   return Array.from(new Map(items.map((item) => [item.id, item])).values());
 }
 
+function slipDuplicateKey(slip: SlipHistoryItem) {
+  const minute = new Date(slip.publishedAt).toISOString().slice(0, 16);
+  const pickKey = [...slip.pickIds].sort().join(",");
+  return [
+    slip.mode,
+    minute,
+    pickKey,
+    getSlipStake(slip).toFixed(2)
+  ].join("|");
+}
+
+function isBetterSlipRecord(candidate: SlipHistoryItem, current: SlipHistoryItem) {
+  const candidateSettled = candidate.settlementStatus !== "pending";
+  const currentSettled = current.settlementStatus !== "pending";
+  if (candidateSettled !== currentSettled) return candidateSettled;
+  const candidateTime = new Date(candidate.publishedAt).getTime();
+  const currentTime = new Date(current.publishedAt).getTime();
+  if (candidateTime !== currentTime) return candidateTime > currentTime;
+  return candidate.id > current.id;
+}
+
+function dedupeSlipHistory(slips: SlipHistoryItem[]) {
+  const bySignature = new Map<string, SlipHistoryItem>();
+  for (const slip of slips) {
+    const key = slipDuplicateKey(slip);
+    const existing = bySignature.get(key);
+    if (!existing || isBetterSlipRecord(slip, existing)) bySignature.set(key, slip);
+  }
+  return Array.from(bySignature.values()).sort((left, right) => new Date(right.publishedAt).getTime() - new Date(left.publishedAt).getTime());
+}
+
 function isApiFootballMatch(match: Match) {
   return match.id.startsWith("api-football-");
 }
@@ -969,13 +1000,13 @@ export function App() {
             return hasLocalDraft ? current : remote.dailySlip!;
           });
         }
-        const normalizedSlipHistory = remote.slipHistory
+        const normalizedSlipHistory = dedupeSlipHistory(remote.slipHistory
           .filter((slip) => isAfterStatsReset(slip.publishedAt))
           .map((slip) => {
             const recalculated = slip.settlementStatus === "pending" ? slip : recalculateSlip(slip, normalizedRemotePicks, remote.votes).slip;
             const override = slipOverrides[slip.id];
             return override ? { ...recalculated, ...override } : recalculated;
-          });
+          }));
         setSlipHistory(normalizedSlipHistory);
         setSyncStatus("ready");
       } catch (error) {
@@ -1203,7 +1234,7 @@ export function App() {
     () => mergeById([...readStoredCollections<Pick>(`${cacheNamespace}:picks:`), ...picks]).map(normalizePickStake),
     [picks]
   );
-  const allStoredSlips = useMemo(() => mergeById([...readStoredCollections<SlipHistoryItem>(`${cacheNamespace}:slip-history:`), ...slipHistory]), [slipHistory]);
+  const allStoredSlips = useMemo(() => dedupeSlipHistory(mergeById([...readStoredCollections<SlipHistoryItem>(`${cacheNamespace}:slip-history:`), ...slipHistory])), [slipHistory]);
   const monthKey = tipDay.slice(0, 7);
   const monthName = new Intl.DateTimeFormat("pt-PT", { month: "long" }).format(currentDate).replace(/^./, (letter) => letter.toUpperCase());
   const dayScope = useMemo(
@@ -1474,11 +1505,21 @@ export function App() {
       generatedAt: publishedAt
     };
     const historySlip = { ...nextSlip, id: historyId, publishedAt };
+    const duplicateSlip = slipHistory.find((slip) => slipDuplicateKey(slip) === slipDuplicateKey(historySlip));
+    if (duplicateSlip) {
+      setDailySlip(duplicateSlip);
+      setSelectedResolveSlipId(duplicateSlip.id);
+      setPopup({
+        title: "Boletim ja publicado",
+        body: "Esta combinada ja tinha sido publicada. Mantive apenas o boletim existente para nao duplicar lucro nem historico."
+      });
+      return;
+    }
     setDailySlip(nextSlip);
-    setSlipHistory((current) => [
+    setSlipHistory((current) => dedupeSlipHistory([
       historySlip,
       ...current
-    ]);
+    ]));
     if (isSupabaseConfigured) {
       setSyncStatus("saving");
       void saveSlip(tipDay, historySlip, activeLeague?.id)
